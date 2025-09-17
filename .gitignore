@@ -1,0 +1,87 @@
+# -------------------------
+# Python build / packaging
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+
+# Bytecode cache
+__pycache__/
+*.pyc
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+wheels/
+
+# Virtual environments
+.env/
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+
+# -------------------------
+# IDE / Editor junk
+# -------------------------
+.vscode/
+.idea/
+*.iml
+*.swp
+*~
+
+# -------------------------
+# Logs & state
+# -------------------------
+logs/
+*.log
+
+# Boris user logs (platformdirs puts them outside repo, but guard anyway)
+boris.log
+
+# -------------------------
+# Snapshots & cache
+# -------------------------
+# Project snapshots (user_data_dir by default, but ignore if written locally)
+snapshots/
+*.snapshot.json
+
+# __pypackages__ (PEP 582)
+__pypackages__/
+
+# pytest / coverage
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+.pytest_cache/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff / lint caches
+.ruff_cache/
+
+# -------------------------
+# Config / secrets
+# -------------------------
+# Local project configuration
+.boris.toml
+# Environment files with secrets
+.env
+.env.*
+!.env.example   # keep a clean example in repo
+
+# -------------------------
+# OS junk
+# -------------------------
+.DS_Store
+Thumbs.db

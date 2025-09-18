@@ -1,6 +1,6 @@
 # 🤖 Boris — Chat With Your Codebase (Editor-agnostic, Local-first)
 
-**Boris** is a **terminal AI assistant for developers**. It **scans your repo** into an in-memory tree, lets you **chat** about files and structure, **applies structured CRUD edits**, and can **run safe shell** checks. It works with **OpenAI** and **Azure OpenAI** today, with a roadmap for **Anthropic Claude** and **Google Gemini**.
+**Boris** is a **terminal AI assistant for developers**. It **scans your repo** into an in-memory tree, lets you **chat** about files and structure, and can **run safe shell** checks. It works with **OpenAI** and **Azure OpenAI** today, with a roadmap for **Anthropic Claude** and **Google Gemini**.
 
 > Looking for a **Cursor / GitHub Copilot / Windsurf / Claude Code**-style assistant but **editor-agnostic** and **local-first**? Boris is a lightweight, repository-aware alternative you drive from the CLI—with explicit config, repeatable runs, and safety rails.
 
@@ -9,7 +9,7 @@
 ## ✨ Highlights
 
 * 🛠 **Local-first** — scans your repo into memory, never writes unless you ask.
-* 🔒 **Safe** — CRUD ops logged; a **safe-mode shell** blocks risky commands.
+* 🔒 **Safe** — a **safe-mode shell** blocks risky commands.
 * ⚡ **Incremental** — **snapshots** cache structure so subsequent runs are fast.
 * 🧭 **Repo-aware chat** — talk about files, folders, diffs, and apply patches.
 * 🔧 **Configurable models** — pick **chat / coding / reasoning / embedding** models per provider.

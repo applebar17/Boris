@@ -65,7 +65,7 @@ cd /path/to/your/repo
 boris chat
 ```
 
-When a chat starts, Boris **“studies” your project** (progress spinner) and shows a concise scan summary. Subsequent runs are faster thanks to snapshots.
+When a chat starts, Boris **“studies” your project** and shows a concise scan summary. First time studying a project could be slow, but subsequent runs are faster thanks to snapshots.
 
 ---
 
@@ -121,7 +121,7 @@ BORIS_AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
 BORIS_AZURE_OPENAI_API_KEY=...
 
 # recommended (explicit pin; Boris has a built-in fallback if omitted)
-BORIS_AZURE_OPENAI_API_VERSION=2024-XX-XX
+BORIS_AZURE_OPENAI_API_VERSION=2025-XX-XX # 2025 versions recommended
 
 # your Azure deployment names
 BORIS_MODEL_CHAT=my-gpt4o-mini
@@ -141,7 +141,7 @@ BORIS_IMPORT_ENRICH=0
 # Cap file size to read into memory (bytes; default 1 MiB)
 BORIS_MAX_READ_BYTES=1048576
 
-# Custom ignore file (merges with .cmignore/.gitignore)
+# Custom ignore file (merges with .cmignore/.gitignore) -> useful for studying process "files which Boris doesn't need to study for operating over the project itself
 BORIS_CMIGNORE_PATH=/abs/path/to/custom.cmignore
 ```
 
@@ -190,10 +190,7 @@ boris [COMMAND]
    * Save fresh **snapshot** for next run.
 5. **Start chat**
 
-   * Build **system prompt** with a rendered tree.
-   * Call **OpenAI/Azure** via the client.
-   * If the model requests tools, execute (`generate_code`, optional safe shell) and stream results back.
-   * Render assistant messages as **rich Markdown** in the terminal.
+   * Start asking Boris to perform actions over you project, he will work on you code for you!
 
 ---
 
@@ -211,7 +208,7 @@ boris [COMMAND]
 
   * Project `.cmignore` and `.gitignore` are merged automatically.
   * Heavy defaults like `.venv/`, `node_modules/`, `dist/`, `build/` are included out-of-the-box.
-* Set `BORIS_IMPORT_ENRICH=0` for very large repos on first import.
+* Set `BORIS_IMPORT_ENRICH=0` for very large repos on first import -> boris may need additional instructions about where to operate.
 * Adjust `BORIS_MAX_READ_BYTES` to avoid slurping giant artifacts.
 
 ---
@@ -264,4 +261,4 @@ See [LICENSE](./LICENSE) for details.
 
 * Run `boris ai test`.
 * Check `boris logs_path` and open the log file for details.
-* Open an Issue: as soon as possible the author will fix it.
+* Open an **Issue**: as soon as possible the author will fix it.

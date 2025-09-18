@@ -9,6 +9,7 @@ from rich.panel import Panel
 from boris.config import Settings
 from boris.app import run_chat
 from boris.logging_config import setup_logging, add_console_tap
+from boris.boriscore.ai_clients.ai_clients import ClientOAI
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 ai = typer.Typer(
@@ -16,11 +17,6 @@ ai = typer.Typer(
 )
 app.add_typer(ai, name="ai")
 
-try:
-    # Uses the refactored client you just added
-    from boris.boriscore.ai_clients.ai_clients import ClientOAI
-except Exception:
-    ClientOAI = None  # allows 'boris ai guide' etc. even if client not importable
 
 _console = Console()
 
@@ -197,10 +193,32 @@ def ai_show():
             lines.append(
                 f"[bold]Models[/]: chat={client.model_chat} coding={client.model_coding} reasoning={client.model_reasoning} embedding={client.embedding_model}"
             )
+            del client
+
         except Exception as e:
             lines.append(f"[red]Client init failed[/]: {e}")
 
     _console.print(Panel("\n".join(lines), title="boris ai"))
+
+
+@app.command()
+def init_config(
+    global_: bool = typer.Option(
+        False, "--global", help="Write in user config dir instead of project folder"
+    )
+):
+    """Create a default .boris.toml (or global config.toml)."""
+    from boris.config import _ensure_default_config
+    from pathlib import Path
+    from platformdirs import user_config_dir
+
+    path = (
+        (Path(user_config_dir("boris", "boris")) / "config.toml")
+        if global_
+        else (Path.cwd() / ".boris.toml")
+    )
+    _ensure_default_config(path)
+    typer.echo(f"Created default config at {path}")
 
 
 @ai.command("test")

@@ -129,13 +129,6 @@ def run_chat(
             if s == "/help":
                 console.print(Panel(HELP.strip(), title="help"))
                 continue
-            if s.startswith("/run "):
-                from .tools.shell import run
-
-                code, out, err = run(s[5:], confirm=cfg.safe_mode)
-                body = (out or err or f"exit {code}").strip()
-                console.print(Panel(body, title=f"shell ({code})"))
-                continue
             answer = _one_turn(s, history)
             console.print(md_panel(answer, title="🤖 boris"))
         return
@@ -159,16 +152,6 @@ def run_chat(
             break
         if s == "/help":
             console.print(Panel(HELP.strip(), title="help"))
-            continue
-        if s.startswith("/run "):
-            from .tools.shell import run
-
-            try:
-                code, out, err = run(s[5:], confirm=cfg.safe_mode)
-                body = (out or err or f"exit {code}").strip()
-                console.print(Panel(body, title=f"shell ({code})"))
-            except Exception as e:
-                console.print(f"[red]shell error:[/] {e}")
             continue
 
         try:

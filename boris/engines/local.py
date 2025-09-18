@@ -56,7 +56,7 @@ class LocalEngine:
             env_vars=("BORIS_CHATBOT_TOOLBOX"),
         )
 
-        self.chatbot_allowed_tools = ["generate_code", "run_shell", "run_bash"]
+        self.chatbot_allowed_tools = ["generate_code"]
 
         # Build the in-memory project tree from the filesystem
         self._bootstrap_project_tree()
@@ -145,8 +145,8 @@ class LocalEngine:
 
         chatbot_tools_mapping = {
             "generate_code": partial(self.cw.chat, chat_history=history, user=user),
-            "run_shell": self.cw.run_shell_tool,
-            "run_bash": self.cw.run_bash_tool,
+            # "run_shell": self.cw.run_shell_tool,
+            # "run_bash": self.cw.run_bash_tool,
         }
 
         self.logger.debug("Chat turn (user=%s, messages=%d)", user, len(history))

@@ -81,6 +81,11 @@ Boris reads from:
 
 #### OpenAI (api.openai.com or compatible)
 
+Configurable through:
+```bash
+boris ai use-openai --api-key sk-... --chat gpt-4o-mini --reasoning o3-mini
+```
+
 ```bash
 # required
 BORIS_OAI_PROVIDER=openai
@@ -103,6 +108,11 @@ BORIS_MODEL_EMBEDDING=text-embedding-3-small
 
 Azure uses **deployment names** (not raw model IDs) and typically requires an **API version**.
 Boris includes a **fallback API version** if `BORIS_AZURE_OPENAI_API_VERSION` is not set, but pinning it is **recommended**.
+
+Configurable through:
+```bash
+boris ai use-azure --endpoint https://<resource>.openai.azure.com/ --api-key ... --chat my-gpt4o-mini --api-version ... --reasoning my-o3-mini --coding my-gpt4o-mini
+```
 
 ```bash
 # required

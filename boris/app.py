@@ -91,7 +91,8 @@ def run_chat(
     cfg = Settings.load()
     app_log.info("Starting chat (engine=%s, user=%s)", cfg.engine, cfg.user)
 
-    engine: Union[RemoteEngine, LocalEngine] = _select_engine(cfg, logger=logger)
+    with console.status("[bold]🧠 Studying your project…[/]"):
+        engine: Union[RemoteEngine, LocalEngine] = _select_engine(cfg, logger=logger)
 
     try:
         from pathlib import Path
@@ -99,6 +100,15 @@ def run_chat(
 
         base_for_paths = getattr(getattr(engine, "impl", None), "base", None)
         event_cb = make_event_printer(console, base_path=base_for_paths or Path.cwd())
+
+        summary = getattr(getattr(engine, "impl", engine), "last_sync_report", None)
+
+        if isinstance(summary, dict):
+            console.print(
+                f"[dim]scan:[/] {summary.get('created_dirs', 0)} dirs, "
+                f"{summary.get('created_files', 0)} new, "
+                f"{summary.get('updated_files', 0)} updated"
+            )
 
         if hasattr(engine, "set_event_sink"):
             engine.set_event_sink(event_cb)

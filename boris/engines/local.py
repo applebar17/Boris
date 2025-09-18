@@ -39,6 +39,7 @@ class LocalEngine:
         # if not provided, fall back to package logger
         self.logger = (logger or logging.getLogger("boris")).getChild("engines.local")
         self.logger.info("Init LocalEngine at base=%s", self.base)
+        self.last_sync_report: dict | None = None
 
         # Create CodeWriter with its own child
         self.cw = CodeWriter(
@@ -107,6 +108,7 @@ class LocalEngine:
             ai_enrichment_metadata_pipe=True,
             remove_missing=False,
         )
+        self.last_sync_report = report
         self.logger.debug("Sync report: %s", report)
 
         # Hand over tree to the CodeWriter

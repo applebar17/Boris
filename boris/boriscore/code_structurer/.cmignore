@@ -173,4 +173,20 @@ Thumbs.db
 *.mov
 *.wmv
 
-.venv
+# common heavy dirs
+.venv/
+venv/
+.env/
+__pycache__/
+*.pyc
+.git/
+.gitlab/
+.github/
+node_modules/
+dist/
+build/
+.mypy_cache/
+.pytype/
+.pytest_cache/
+.coverage
+.DS_Store

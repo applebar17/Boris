@@ -6,6 +6,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Union, List, Optional, Mapping, Dict, Any
+from collections.abc import Mapping  # at top of file if not present
 
 from dotenv import load_dotenv
 
@@ -80,6 +81,46 @@ class ClientOAI:
                 "No .env loaded (or failed); proceeding with process env.", "debug"
             )
 
+        self._load_env_vars()
+        # --- Create client ---
+        self.openai_client = self._make_client()
+        # Back-compat alias: some old code referenced "openai_embeddings_client"
+        self.openai_embeddings_client = self.openai_client
+
+        # Message role type mapping (kept from your original code)
+        self.mapping_message_role_model = {
+            "developer": ChatCompletionDeveloperMessageParam,
+            "system": ChatCompletionSystemMessageParam,
+            "user": ChatCompletionUserMessageParam,
+            "assistant": ChatCompletionAssistantMessageParam,
+            "tool": ChatCompletionToolMessageParam,
+            "function": ChatCompletionFunctionMessageParam,
+        }
+        self.valid_message_classes = (
+            ChatCompletionDeveloperMessageParam,
+            ChatCompletionSystemMessageParam,
+            ChatCompletionUserMessageParam,
+            ChatCompletionAssistantMessageParam,
+            ChatCompletionToolMessageParam,
+            ChatCompletionFunctionMessageParam,
+        )
+
+        # Continue MRO
+        try:
+            super().__init__(
+                base_path=self.base_path, logger=self.logger, *args, **kwargs
+            )
+        except TypeError:
+            # parent may not accept these kwargs (or is just `object`)
+            try:
+                super().__init__(*args, **kwargs)
+            except TypeError:
+                # parent is likely `object`; nothing to initialize
+                pass
+
+    # --------------------------- internals ---------------------------
+    def _load_env_vars(self) -> None:
+
         # --- Provider & auth ---
         # Preferred: BORIS_OAI_PROVIDER in {"openai","azure"}
         self.provider: str = os.getenv("BORIS_OAI_PROVIDER", "").strip().lower()
@@ -91,9 +132,11 @@ class ClientOAI:
         self.azure_api_key: Optional[str] = os.getenv(
             "BORIS_AZURE_OPENAI_API_KEY"
         ) or os.getenv("AZURE_OPENAI_API_KEY")
-        self.azure_api_version: Optional[str] = os.getenv(
-            "BORIS_AZURE_OPENAI_API_VERSION"
-        ) or os.getenv("AZURE_OPENAI_API_VERSION")
+        self.azure_api_version: Optional[str] = (
+            os.getenv("BORIS_AZURE_OPENAI_API_VERSION")
+            or os.getenv("AZURE_OPENAI_API_VERSION")
+            or "2025-04-01-preview"
+        )
 
         # OpenAI config
         self.openai_api_key: Optional[str] = os.getenv(
@@ -142,33 +185,8 @@ class ClientOAI:
         # For backward-compat with existing calls
         self.llm_model: Optional[str] = self.model_chat
 
-        # --- Create client ---
-        self.openai_client = self._make_client()
-        # Back-compat alias: some old code referenced "openai_embeddings_client"
-        self.openai_embeddings_client = self.openai_client
+        return None
 
-        # Message role type mapping (kept from your original code)
-        self.mapping_message_role_model = {
-            "developer": ChatCompletionDeveloperMessageParam,
-            "system": ChatCompletionSystemMessageParam,
-            "user": ChatCompletionUserMessageParam,
-            "assistant": ChatCompletionAssistantMessageParam,
-            "tool": ChatCompletionToolMessageParam,
-            "function": ChatCompletionFunctionMessageParam,
-        }
-        self.valid_message_classes = (
-            ChatCompletionDeveloperMessageParam,
-            ChatCompletionSystemMessageParam,
-            ChatCompletionUserMessageParam,
-            ChatCompletionAssistantMessageParam,
-            ChatCompletionToolMessageParam,
-            ChatCompletionFunctionMessageParam,
-        )
-
-        # Continue MRO
-        super().__init__(base_path=self.base_path, logger=self.logger, *args, **kwargs)
-
-    # --------------------------- internals ---------------------------
     def _log(self, msg: str, log_type: str = "info") -> None:
         """Uniform logging wrapper."""
         log_msg(self.logger, msg=msg, log_type=log_type)
@@ -276,20 +294,32 @@ class ClientOAI:
             ChatCompletionSystemMessageParam(role="system", content=system_prompt),
         ]
 
-        # Normalize chat_messages into typed params
         def _append_one(m: Union[dict, ChatCompletionMessageParam]) -> None:
-            if isinstance(m, self.valid_message_classes):
-                messages.append(m)
+            """
+            Normalize one message into a typed ChatCompletion*MessageParam.
+            Accepts dict-like objects (preferred) or objects with .role/.content attrs.
+            """
+            # Fast path: dict/Mapping with "role" and "content"
+            if isinstance(m, Mapping):
+                role = m.get("role")
+                content = m.get("content")
+                if not role or role not in self.mapping_message_role_model:
+                    raise ValueError(f"Invalid or missing message role: {role!r}")
+                messages.append(
+                    self.mapping_message_role_model[role](role=role, content=content)
+                )
                 return
-            if not isinstance(m, dict):
-                raise ValueError(f"Unsupported message type: {type(m)}")
-            role = m.get("role")
-            content = m.get("content")
-            if not role or role not in self.mapping_message_role_model:
-                raise ValueError(f"Invalid or missing message role: {role!r}")
-            messages.append(
-                self.mapping_message_role_model[role](role=role, content=content)
-            )
+
+            # Object path: try attribute access
+            role = getattr(m, "role", None)
+            content = getattr(m, "content", None)
+            if role and role in self.mapping_message_role_model:
+                messages.append(
+                    self.mapping_message_role_model[role](role=role, content=content)
+                )
+                return
+
+            raise ValueError(f"Unsupported message type: {type(m)}")
 
         if isinstance(chat_messages, str):
             messages.append(

@@ -20,6 +20,7 @@ from boris.boriscore.prompts.prompts import (
     FILEDISK_DESCRIPTION_METADATA,
 )
 from boris.boriscore.models.ai import FileDiskMetadata, Code
+from boris.boriscore.utils.resources import load_ignore_patterns
 
 
 class CodeProject(ClientOAI, BashExecutor):
@@ -41,6 +42,7 @@ class CodeProject(ClientOAI, BashExecutor):
             "boris/boriscore/code_structurer/toolboxes/toolbox.json"
         ),
         toolbox_override: Path | None = None,
+        cmignore_override: Optional[Path] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -50,9 +52,8 @@ class CodeProject(ClientOAI, BashExecutor):
 
         self._log(f"Base path CodeProject = {self.base_path}")
 
-        self.to_ignore_file_path = self.base_path / to_ignore_file_path
+        self._load_ignore_spec(cmignore_override=cmignore_override)
         self.output_path: Path = self.base_path / output_project_path
-        self._ignore_spec = self._load_ignore_spec()
 
         self.on_event: Optional[Callable[[str, Path], None]] = (
             None  # global sink for CRUD events
@@ -141,27 +142,52 @@ class CodeProject(ClientOAI, BashExecutor):
             return parent.parent
         return parent
 
-    def _load_ignore_spec(self) -> "pathspec.PathSpec":
+    def _load_ignore_spec(
+        self,
+        cmignore_override: Optional[Path] = None,
+    ) -> "pathspec.PathSpec":
         """
         Parse .cmignore (git-ignore syntax) and return a PathSpec matcher.
         Falls back to an empty spec if the file does not exist.
         """
-        if self.to_ignore_file_path.exists():
-            patterns = self.to_ignore_file_path.read_text().splitlines()
-            patterns = [
-                p.strip() for p in patterns if p.strip() and not p.startswith("#")
-            ]
-            return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+        patterns = load_ignore_patterns(
+            base_path=self.base_path,
+            project_relpath=".cmignore",  # allow per-project override at repo root
+            dev_relpath="boris/boriscore/code_structurer/.cmignore",
+            package="boris.boriscore.code_structurer",
+            package_relpath=".cmignore",  # packaged default lives here
+            user_override=cmignore_override,
+            env_vars=("BORIS_CMIGNORE_PATH",),
+            include_gitignore=True,
+            builtin_fallback=(
+                ".git/",
+                ".venv/",
+                "venv/",
+                "__pycache__/",
+                "*.pyc",
+                "node_modules/",
+                "dist/",
+                "build/",
+                ".mypy_cache/",
+                ".pytest_cache/",
+            ),
+        )
+        self._ignore_spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
 
-        # nothing to ignore
-        return pathspec.PathSpec.from_lines("gitwildmatch", [])
+        try:
+            sample = [".venv/", "node_modules/", ".git/", "__pycache__/"]
+            hits = [p for p in sample if self._ignore_spec.match_file(p)]
+            if hits:
+                self._log(f"Ignore spec active; sample matches: {', '.join(hits)}")
+        except Exception:
+            pass
 
     def _is_ignored(self, path: Path) -> bool:
         """
-        True if *path* (relative to project root) matches the ignore spec.
+        True if *path* (relative to project root) matches .cmignore/.gitignore rules.
         """
-        # rel = path.relative_to(self.base_path)
-        return self._ignore_spec.match_file(str(path))
+        rel = Path(path).resolve().relative_to(self.base_path)
+        return self._ignore_spec.match_file(rel.as_posix())
 
     def _assert_unique_child_name(
         self,
@@ -1115,6 +1141,7 @@ class CodeProject(ClientOAI, BashExecutor):
             model=self.llm_model,
             temperature=0.0,
             response_format=FileDiskMetadata,  # your structured output
+            max_tokens=100,
         )
 
         code_description_output: OpenaiApiCallReturnModel = self.call_openai(
@@ -1146,19 +1173,13 @@ class CodeProject(ClientOAI, BashExecutor):
         ai_enrichment_metadata_pipe: bool = True,
     ) -> list[str]:
         """
-        Scan *src* (defaults to self.base_path / root.name) and replicate every
-        file/folder into the current CodeProject tree.
-
-        • Each discovered entry gets a stable id derived from parent/name (your choice).
-        • If *read_code* is True, the content of each file is stored in `code`.
-        • If *overwrite* is True, existing children of the root are cleared before import.
-
-        Returns a list of all created node-ids.
+        Scan *src* (defaults to self.base_path) and replicate every file/folder
+        into the current CodeProject tree (in-memory only).
         """
         if self.root is None:
             raise ValueError("Project has no ROOT – initialise CodeProject first.")
 
-        src = src or self.base_path
+        src = (src or self.base_path).resolve()
         if not src.exists():
             raise FileNotFoundError(src)
 
@@ -1168,16 +1189,92 @@ class CodeProject(ClientOAI, BashExecutor):
                 self.ids = {"ROOT"}  # keep only root registered
 
         created: list[str] = []
-
-        # Local cache {Path: ProjectNode}
         path_to_node: dict[Path, ProjectNode] = {src: self.root}
 
-        for root_path, dirs, files in os.walk(src):
-            current_parent = Path(root_path)
-            parent_node = path_to_node[current_parent]
+        import os
 
-            # filter ignored directories
-            dirs[:] = [d for d in dirs if not self._is_ignored(current_parent / d)]
+        # perf/robustness guards
+        MAX_FILE_BYTES = int(
+            os.getenv("BORIS_MAX_READ_BYTES", "1048576")
+        )  # 1 MiB default
+        BINARY_SNIFF = 4096
+
+        def _is_binary(p: Path) -> bool:
+            try:
+                with p.open("rb") as fh:
+                    chunk = fh.read(BINARY_SNIFF)
+                return b"\x00" in chunk  # simple, cheap heuristic
+            except Exception:
+                return True  # treat unreadable as binary
+
+        def _should_read(p: Path) -> bool:
+            if not read_code:
+                return False
+            try:
+                if p.stat().st_size > MAX_FILE_BYTES:
+                    return False
+            except Exception:
+                return False
+            return not _is_binary(p)
+
+        CODE_EXTS = {
+            ".py",
+            ".ts",
+            ".tsx",
+            ".js",
+            ".jsx",
+            ".mjs",
+            ".go",
+            ".rs",
+            ".java",
+            ".kt",
+            ".c",
+            ".cpp",
+            ".h",
+            ".hpp",
+            ".cs",
+            ".rb",
+            ".php",
+            ".sh",
+            ".ps1",
+            ".toml",
+            ".yaml",
+            ".yml",
+            ".json",
+            ".md",
+            ".txt",
+            # ".ipynb",
+        }
+
+        def _should_enrich(p: Path, content: Optional[str]) -> bool:
+            if not ai_enrichment_metadata_pipe:
+                return False
+            # Only enrich plausible source/config/docs
+            return p.suffix.lower() in CODE_EXTS
+
+        def _onerror(err):
+            self._log(f"os.walk error on {getattr(err, 'filename', '?')}: {err}")
+
+        for root_path, dirs, files in os.walk(
+            src, topdown=True, followlinks=False, onerror=_onerror
+        ):
+            current_parent = Path(root_path)
+
+            # If the directory itself is ignored, skip the whole subtree.
+            if self._is_ignored(current_parent):
+                continue
+
+            # Prune ignored subdirectories in-place and ensure stable order.
+            dirs[:] = sorted(
+                d for d in dirs if not self._is_ignored(current_parent / d)
+            )
+            files = sorted(f for f in files if not self._is_ignored(current_parent / f))
+
+            parent_node = path_to_node.get(current_parent)
+            if parent_node is None:
+                # Shouldn't generally happen, but be defensive.
+                parent_node = self.root
+                path_to_node[current_parent] = parent_node
 
             # Folders
             for d in dirs:
@@ -1196,25 +1293,23 @@ class CodeProject(ClientOAI, BashExecutor):
                 node = self.retrieve_node(node_id=node_id, dump=False)
                 path_to_node[folder_path] = node
                 created.append(node.id)
+                self._log(f"Imported node (dir): {folder_path.relative_to(src)}")
 
             # Files
             for f in files:
                 file_path = current_parent / f
-                if self._is_ignored(file_path):
-                    continue
+                self._log(f"Importing node (file): {file_path} ...")
 
-                # Read content (optional)
-                file_content = None
-                if read_code:
+                file_content: Optional[str] = None
+                if _should_read(file_path):
                     try:
-                        file_content = file_path.read_text(
-                            encoding="utf-8", errors="ignore"
-                        )
-                    except Exception:
-                        file_content = None
+                        # Read once (bytes) then decode; avoids double I/O.
+                        raw = file_path.read_bytes()
+                        file_content = raw.decode("utf-8", errors="ignore")
+                    except Exception as e:
+                        self._log(f"Read skipped ({e.__class__.__name__}): {file_path}")
 
-                # Gather metadata (AI or fallback)
-                if ai_enrichment_metadata_pipe:
+                if _should_enrich(file_path, file_content):
                     metadata = self._diskfile_add_description_metadata(
                         file_name=f, file_content=file_content or ""
                     )

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 
-def _safe_truncate(text: str, limit: int = 60_000) -> str:
+def _safe_truncate(text: str, limit: int = 15_000) -> str:
     if text is None:
         return ""
     if len(text) <= limit:

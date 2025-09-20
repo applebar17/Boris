@@ -52,7 +52,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/applebar17/boris"
+Homepage = "https://github.com/applebar17/Boris"
 
 [project.scripts]
 boris = "boris.cli:app"

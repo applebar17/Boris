@@ -8,10 +8,10 @@ version = "0.1.0"
 description = "Terminal-first AI coding/chat assistant with safe shell tools."
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "Your Name", email = "you@example.com" }]
+authors = [{ name = "Riccardo Tordini", email = "tordiniriccardo@gmail.com" }]
 # Prefer pointing to a file to avoid the setuptools deprecation warning.
 license = { file = "LICENSE" }
-keywords = ["cli", "ai", "chat", "terminal"]
+keywords = ["cli", "ai", "chat", "terminal", "coding", "assistant", "boris"]
 
 # Runtime dependencies ONLY (things your installed CLI needs to run)
 dependencies = [
@@ -52,7 +52,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/boris"
+Homepage = "https://github.com/applebar17/boris"
 
 [project.scripts]
 boris = "boris.cli:app"
@@ -63,6 +63,5 @@ where = ["."]
 include = ["boris*"]
 exclude = ["tests*"]
 
-# If you ship non-.py assets later, uncomment and adjust:
-# [tool.setuptools.package-data]
-# "boris" = ["**/*.txt", "**/*.md", "prompts/*", "templates/*"]
+[tool.setuptools.package-data]
+"boris" = ["**/*.txt", "**/*.md", "**/*.json"]

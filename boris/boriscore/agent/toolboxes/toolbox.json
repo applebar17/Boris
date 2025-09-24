@@ -135,7 +135,7 @@
           "language",
           "commit_message",
           "new_parent_id",
-          "updated_code",
+          "updated_file",
           "new_id"
         ],
         "additionalProperties": false

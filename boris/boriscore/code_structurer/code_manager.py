@@ -530,8 +530,22 @@ class CodeProject(ClientOAI, BashExecutor):
                 f"Retievable ids: {', '.join(self.ids)}\n"
                 # f"from current structure:\n{self.get_tree_structure()}"
             )
+        if getattr(node, "is_file", False):
+            try:
+                p = self.path_for(node, root_dst=self.base_path)
+            except Exception:
+                p = Path(node.name)
+            # uses CodeProject._emit → will go to CLI sink if present
+            self._emit("reading file", p)
+
         if return_content and node.is_file:
-            return f"Name: {node.name}\nDescription: {node.description}\nCode in coding language [{node.language}]:\n {node.code}\n\nNow, you cannot fetch anymore information from node {node.id}."
+            return (
+                f"Name: {node.name}\n"
+                f"Description: {node.description}\n"
+                f"Code in coding language [{node.language}]:\n {node.code}\n\n"
+                f"Now, you cannot fetch anymore information from node {node.id}."
+            )
+
         return node.model_dump(deep=False) if dump else node
 
     def update_node(
@@ -543,7 +557,7 @@ class CodeProject(ClientOAI, BashExecutor):
         scope: Optional[str] = None,
         language: Optional[str] = None,
         commit_message: Optional[str] = None,
-        updated_code: Optional[str] = None,
+        updated_file: Optional[str] = None,
         new_parent_id: Optional[str] = None,
         new_id: Optional[str] = None,
         update_node_on_disk: bool = True,
@@ -610,7 +624,7 @@ class CodeProject(ClientOAI, BashExecutor):
             scope=scope,
             language=language,
             commit_message=commit_message,
-            code=updated_code,
+            code=updated_file,
             id=new_id,
         )
 
@@ -1054,7 +1068,8 @@ class CodeProject(ClientOAI, BashExecutor):
                         if not dry_run:
                             target.write_text(new_content, encoding="utf-8")
                     else:
-                        status = "unchanged file"
+                        # status = "unchanged file"
+                        pass
                 else:
                     status = "created file"
                     if not dry_run:
@@ -1076,7 +1091,8 @@ class CodeProject(ClientOAI, BashExecutor):
                     base.mkdir(parents=True, exist_ok=True)
                 self._emit("created dir", base)
             else:
-                self._emit("dir exists", base)
+                # self._emit("dir exists", base)
+                pass
             for ch in getattr(node, "children", []) or []:
                 if ch.is_file:
                     write_file(ch)

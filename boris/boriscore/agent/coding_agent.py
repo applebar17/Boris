@@ -116,12 +116,16 @@ class CodeWriter(CodeProject):
 
     # -------------------- toolbox utilities --------------------
 
-    def build_tool_blurb(self) -> str:
+    def build_tool_blurb(self, specific_tools_list: Optional[list] = None) -> str:
         """Return a markdown table, one line per *allowed* tool: | name | description |."""
         header = ["| Tool | Use-case |", "|------|----------|"]
         rows: list[str] = []
 
-        for name in self.code_writer_allowed_tools:
+        for name in (
+            specific_tools_list
+            if specific_tools_list
+            else self.code_writer_allowed_tools
+        ):
             tool = self.code_writer_toolbox.get(name)
             if not tool or "function" not in tool:
                 continue
@@ -288,9 +292,13 @@ class CodeWriter(CodeProject):
             outputs_joined=outputs_joined,
         )
 
+        chat_messages = [
+            ChatCompletionUserMessageParam(content=user_prompt, role="user")
+        ]
+
         params = self.handle_params(
             system_prompt=OUTPUT_SUMMARY_SYSTEM_PROMPT,
-            chat_messages=[{"role": "user", "content": user_prompt}],
+            chat_messages=chat_messages,
             temperature=temperature,
             model=model or getattr(self, "llm_model", None),
             user=user,
@@ -335,16 +343,18 @@ class CodeWriter(CodeProject):
             "Action to plan:\n"
             f"{reasoning_block}\n"
         )
+        chat_messages = [ChatCompletionUserMessageParam(content=user_msg, role="user")]
 
         # Ask client for structured output directly
         params = self.handle_params(
             system_prompt=ACTION_PLANNER_SYSTEM_PROMPT,
-            chat_messages=[user_msg],
+            chat_messages=chat_messages,
             temperature=temperature,
             model=self.llm_model,
             user=user,
             tools=[retrieve_tool],  # ONLY retriever exposed
             parallel_tool_calls=False,
+            response_format=ActionPlanningOutput,
         )
 
         # Tool mapping: just retrieve_node
@@ -355,11 +365,13 @@ class CodeWriter(CodeProject):
         # Call the LLM; allow it to iteratively retrieve
         result = self.call_openai(params=params, tools_mapping=tools_mapping)
 
-        # Parse output: client may already parse with response_format; otherwise JSON
+        parsed: ActionPlanningOutput
         if isinstance(result.message_content, dict):
-            return ActionPlanningOutput(**result.message_content)
+            parsed = ActionPlanningOutput(**result.message_content)
+        else:
+            parsed = ActionPlanningOutput(**json.loads(result.message_content))
 
-        return ActionPlanningOutput(**json.loads(result.message_content))
+        return parsed
 
     @traceable
     def reasoning_step(
@@ -381,7 +393,6 @@ class CodeWriter(CodeProject):
             raise ValueError("Unrecognized chat history/message structure.")
 
         available_tools = self.build_tool_blurb()
-
         params = self.handle_params(
             system_prompt=REASONING.format(
                 project_structure=project_structure,
@@ -389,7 +400,7 @@ class CodeWriter(CodeProject):
             ),
             chat_messages=chat_messages,
             model=getattr(self, "model_reasoning", None) or self.llm_model,
-            temperature=0.0,
+            temperature=None,
             response_format=ReasoningPlan,  # ask client to parse if it supports it
             user=user,
             tools=[self.code_writer_toolbox.get("retrieve_node")],
@@ -522,10 +533,14 @@ class CodeWriter(CodeProject):
             # Reuse AGENT_CHAT_MESSAGE by treating the plan as the “reasoning”
             # and a concise action line as the “chat_message”.
             coder_user_line = f"Action: {action.intent} ({getattr(action.operation, 'value', action.operation)}) → {action.target_path}"
-            chat_messages = AGENT_CHAT_MESSAGE.format(
+            planning_action = AGENT_CHAT_MESSAGE.format(
                 chat_message=coder_user_line,
                 reasoning=action_plan.detailed_coding_plan,
             )
+            # Normalize chat_messages to a list
+            chat_messages = [
+                ChatCompletionUserMessageParam(content=planning_action, role="user")
+            ]
             original_request = chat_messages  # keep for final summary + mapping context
 
             # 3) Refresh mapping (inject the latest original_request for AI-assisted tools if enabled)
@@ -550,8 +565,10 @@ class CodeWriter(CodeProject):
             # Prefer CODE_GEN template if present, else fall back to AGENT_SYSTEM_PROMPT.
             system_template = CODE_GEN
             system_prompt = system_template.format(
-                tree_structure=tree_structure,
-                available_tools=self.build_tool_blurb(),
+                project_structure=tree_structure,
+                available_tools=self.build_tool_blurb(
+                    specific_tools_list=selected_names
+                ),
             )
 
             # 6) Call the Coder agent with just the coherent tools
@@ -590,6 +607,9 @@ class CodeWriter(CodeProject):
         self, chat_history: Union[str, list], user: Optional[str] = None
     ) -> str:
         """One-shot: reason → generate → summarize."""
+
+        # Sync first always
+        self.sync_with_disk(ai_enrichment_metadata_pipe=False)
         self._log("Agent message received.")
         plan = self.reasoning_step(chat_message=chat_history, user=user)
         # return self.generate_files_chat(

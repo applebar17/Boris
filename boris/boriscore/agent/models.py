@@ -105,10 +105,15 @@ class Action(BaseModel):
     def update_requires_retrieving_target(cls, v: List[MinimalFile], info):
         op: Operation = info.data.get("operation")
         target_path: str = info.data.get("target_path", "")
-        if op == Operation.UPDATE_AND_CREATE and target_path:
+        if (
+            op == Operation.RETRIEVE_UPDATE_AND_CREATE
+            or op == Operation.RETRIEVE_AND_CREATE
+            or op == Operation.RETRIEVE_AND_UPDATE
+            and target_path
+        ):
             if not any(mf.id == target_path for mf in v):
                 raise ValueError(
-                    "UPDATE_AND_CREATE operation requires retrieving the target file first "
+                    "Requested operation requires retrieving the target file first "
                     "(include target_path in minimal_files_to_retrieve)."
                 )
         return v

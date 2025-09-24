@@ -151,8 +151,8 @@ class LocalEngine:
             "invoke_ai_coding_assistant": partial(
                 self.cw.invoke_agent, chat_history=history, user=user
             ),
-            # "run_shell": self.cw.run_shell_tool,
-            # "run_bash": self.cw.run_bash_tool,
+            # "run_shell": self.cw.run_shell,
+            # "run_bash": self.cw.run_bash,
         }
 
         self.logger.debug("Chat turn (user=%s, messages=%d)", user, len(history))

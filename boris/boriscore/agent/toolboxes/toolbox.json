@@ -118,9 +118,9 @@
             "type": ["string", "null"],
             "description": "Identifier of the new parent folder (omit to keep the same parent)."
           },
-          "updated_code": {
+          "updated_file": {
             "type": ["string", "null"],
-            "description": "The updated code of the file to be executed in the programming language specified."
+            "description": "The updated code of the whole file to be executed in the programming language specified. You should rewrite the WHOLE file, including patched and old code."
           },
           "new_id": {
             "type": ["string", "null"],

@@ -282,6 +282,18 @@ Now produce the final concise summary for the user."""
 
 ACTION_PLANNER_SYSTEM_PROMPT = """You are the Action Planner.
 You can ONLY retrieve files with the provided tool.
+
+This is the current status of the project:
+{project_structure}
+
+Node format (hierarchy view) of the project: explained.
+```
+DIR [ROOT] <project name>: <description>
+└─  DIR [<node id>] <folder name>: <description>
+    └─ FILE [<node id>] <file name>: <description>
+    └─ …
+```
+
 Your job:
 1) Retrieve the MINIMAL files required for this single action (start with the action's 'minimal_files_to_retrieve').
 2) If more context is strictly needed, retrieve one file at a time.
@@ -311,6 +323,19 @@ You are an advanced code-generation assistant.
 Project structure:
 {project_structure}
 
+
+Node format (hierarchy view) of the project: explained.
+```
+DIR [ROOT] <project name>: <description>
+└─  DIR [<node id>] <folder name>: <description>
+    └─ FILE [<node id>] <file name>: <description>
+    └─ …
+```
+You have the following tools available:
+
+{available_tools}
+
+Overall,
 Guidelines for generation
 1. Follow the established conventions in the existing codebase (style, dependency choices, directory layout).
 2. Prefer clear, idiomatic, and maintainable code over clever but opaque solutions.
@@ -324,11 +349,4 @@ Tooling
 • Use the tool sparingly—only when the additional file genuinely informs the current task (e.g., shared utilities, interfaces, or style references). 
 • File ids are encapsulated in square brackets in the current project structure, for example [root/models/api.py] -> 'root/models/api.py' is the node/file id.
 
-Node format (hierarchy view)
-```
-DIR [ROOT] <project name>: <description>
-└─  DIR [<node id>] <folder name>: <description>
-    └─ FILE [<node id>] <file name>: <description>
-    └─ …
-```
 """

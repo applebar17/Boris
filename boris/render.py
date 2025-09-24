@@ -48,6 +48,7 @@ EVENT_ICONS = {
     "deleted dir": "🗑️📁",
     "moved": "📦",
     "renamed": "🔁",
+    "reading file": "📖",
     # High-level (in‑memory) events if you emit them later:
     "created node": "🌱",
     "updated node": "🔧",
@@ -68,6 +69,7 @@ EVENT_STYLES = {
     "created node": "green",
     "updated node": "yellow",
     "deleted node": "red",
+    "reading file": "blue",
 }
 
 Pathish = Union[str, Path]

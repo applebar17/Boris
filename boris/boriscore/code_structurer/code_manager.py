@@ -37,7 +37,6 @@ class CodeProject(ClientOAI, BashExecutor):
         output_project_path: Path = Path("data/processed"),
         logger: Optional[logging.Logger] = None,
         init_root: bool = True,
-        to_ignore_file_path: Path = "boris/boriscore/code_structurer/.cmignore",
         code_project_toolbox_path: Path = Path(
             "boris/boriscore/code_structurer/toolboxes/toolbox.json"
         ),
@@ -99,7 +98,9 @@ class CodeProject(ClientOAI, BashExecutor):
 
     def update_tool_mapping_CP(self, return_content: bool = False) -> None:
         self.code_project_tools_mapping = {
-            "retrieve_node": partial(self.retrieve_node, return_content=return_content),
+            "retrieve_node": partial(
+                self.retrieve_node, return_content=return_content, to_emit=True
+            ),
         }
 
     def _assert_unique(self, id: Optional[str]):
@@ -519,6 +520,7 @@ class CodeProject(ClientOAI, BashExecutor):
         *,
         dump: bool = True,
         return_content: bool = False,
+        to_emit: bool = False,
     ) -> Union[ProjectNode, dict]:
         if self.root is None:
             raise ValueError("Project is empty. Please create ROOT folder first.")
@@ -530,13 +532,14 @@ class CodeProject(ClientOAI, BashExecutor):
                 f"Retievable ids: {', '.join(self.ids)}\n"
                 # f"from current structure:\n{self.get_tree_structure()}"
             )
-        if getattr(node, "is_file", False):
-            try:
-                p = self.path_for(node, root_dst=self.base_path)
-            except Exception:
-                p = Path(node.name)
-            # uses CodeProject._emit → will go to CLI sink if present
-            self._emit("reading file", p)
+        if to_emit:
+            if getattr(node, "is_file", False):
+                try:
+                    p = self.path_for(node, root_dst=self.base_path)
+                except Exception:
+                    p = Path(node.name)
+                # uses CodeProject._emit → will go to CLI sink if present
+                self._emit("reading file", p)
 
         if return_content and node.is_file:
             return (

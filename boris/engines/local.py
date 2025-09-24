@@ -151,6 +151,7 @@ class LocalEngine:
             "invoke_ai_coding_assistant": partial(
                 self.cw.invoke_agent, chat_history=history, user=user
             ),
+            # "retrieve_node":partial(self.cw.retrieve_node, return_content=True, to_emit=True),
             # "run_shell": self.cw.run_shell,
             # "run_bash": self.cw.run_bash,
         }
@@ -169,6 +170,7 @@ class LocalEngine:
                 if name in self.chatbot_allowed_tools
             ],
             user=user,
+            parallel_tool_calls=False,
         )
         answer_obj: OpenaiApiCallReturnModel = self.cw.call_openai(
             params=params, tools_mapping=chatbot_tools_mapping

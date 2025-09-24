@@ -163,7 +163,9 @@ class CodeWriter(CodeProject):
         through AI-augmented helpers; otherwise use direct CRUD.
         """
         base_map = {
-            "retrieve_node": partial(self.retrieve_node, return_content=True),
+            "retrieve_node": partial(
+                self.retrieve_node, return_content=True, to_emit=True
+            ),
             "delete_node": self.delete_node,
             "run_shell": self.run_shell_tool,
             "run_bash": self.run_bash_tool,
@@ -359,7 +361,9 @@ class CodeWriter(CodeProject):
 
         # Tool mapping: just retrieve_node
         tools_mapping = {
-            "retrieve_node": partial(self.retrieve_node, return_content=True),
+            "retrieve_node": partial(
+                self.retrieve_node, return_content=True, to_emit=True
+            ),
         }
 
         # Call the LLM; allow it to iteratively retrieve
@@ -410,7 +414,9 @@ class CodeWriter(CodeProject):
             result: OpenaiApiCallReturnModel = self.call_openai(
                 params=params,
                 tools_mapping={
-                    "retrieve_node": partial(self.retrieve_node, return_content=True)
+                    "retrieve_node": partial(
+                        self.retrieve_node, return_content=True, to_emit=True
+                    )
                 },
             )
 

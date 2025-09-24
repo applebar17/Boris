@@ -23,14 +23,14 @@
     "type": "function",
     "function": {
       "name": "create_node",
-      "description": "Create a new folder or file in the project tree. If the tree is empty this call can also create the root (use code \"ROOT\"). Placement among siblings is controlled by *position*; omitting it appends to the end of the parent’s children list. Every *code* must be unique. You CAN'T use a file as a parent. When *is_file* is true the agent generates the initial code for you, guided by *coding_complexity* and *coding_instructions*.",
+      "description": "Create a new folder or file in the project tree. If the tree is empty this call can also create the root (use code \"ROOT\"). Placement among siblings is controlled by *position*; omitting it appends to the end of the parent’s children list. Every *code* must be unique. If you create an empty file, mention that in the description. You CAN'T use as parent_id a file, only a folder.",
       "strict": true,
       "parameters": {
         "type": "object",
         "properties": {
           "node_id": {
             "type": ["string", "null"],
-            "description": "Unique identifier for the node. Must not duplicate any existing IDs."
+            "description": "Unique identifier for the node. Must not duplicate any existing codes."
           },
           "parent_id": {
             "type": ["string", "null"],
@@ -46,7 +46,7 @@
           },
           "description": {
             "type": ["string", "null"],
-            "description": "Short human-readable description of the node’s purpose."
+            "description": "Short human-readable description of the node’s purpose. If node has empty 'code' specify that into description."
           },
           "scope": {
             "type": ["string", "null"],
@@ -60,13 +60,9 @@
             "type": ["string", "null"],
             "description": "Suggested commit message for VCS operations involving this node."
           },
-          "coding_complexity": {
-            "type": ["boolean", "null"],
-            "description": "If true the agent should generate more sophisticated boilerplate; otherwise keep it minimal."
-          },
-          "coding_instructions": {
+          "code": {
             "type": ["string", "null"],
-            "description": "High-level guidance for the agent on what the initial code should do. Provide as well ids of sources of important file dependencies, imports or any file which could be relevant for contextual development."
+            "description": "When is_file is true, the actual code of the file to be executed in the programming language specified."
           }
         },
         "required": [
@@ -78,8 +74,7 @@
           "scope",
           "language",
           "commit_message",
-          "coding_complexity",
-          "coding_instructions"
+          "code"
         ],
         "additionalProperties": false
       }
@@ -90,7 +85,7 @@
     "type": "function",
     "function": {
       "name": "update_node",
-      "description": "Update metadata (name, description, scope, language, commit message) and/or move a node to a new parent/position. For files the agent can also regenerate the code according to *update_code_instructions* and desired *coding_complexity*. Moving the root is not allowed and cycles are prevented automatically.",
+      "description": "Update metadata (name, description, scope, language, commit message) and/or move a node to a new parent/position. Moving the root is not allowed and cycles are prevented automatically.",
       "strict": true,
       "parameters": {
         "type": "object",
@@ -105,7 +100,7 @@
           },
           "description": {
             "type": ["string", "null"],
-            "description": "Updated description (omit to keep the same)."
+            "description": "Updated description (omit to keep the same).  If node has empty 'code' specify that into description."
           },
           "scope": {
             "type": ["string", "null"],
@@ -119,21 +114,17 @@
             "type": ["string", "null"],
             "description": "Updated commit message. Always update commit message."
           },
-          "update_code_instructions": {
-            "type": ["string", "null"],
-            "description": "High-level instructions telling the agent how to modify the existing code (ignored for folders). Provide as well ids of sources of important file dependencies, imports or any file which could be relevant for contextual development."
-          },
-          "coding_complexity": {
-            "type": ["string", "null"],
-            "description": "Desired sophistication level for regenerated code (e.g. \"simple\", \"advanced\")."
-          },
           "new_parent_id": {
             "type": ["string", "null"],
             "description": "Identifier of the new parent folder (omit to keep the same parent)."
           },
+          "updated_code": {
+            "type": ["string", "null"],
+            "description": "The updated code of the file to be executed in the programming language specified."
+          },
           "new_id": {
             "type": ["string", "null"],
-            "description": "Updated ID. Omit to keep the same ID."
+            "description": "Updated id. Omit to keep the same id."
           }
         },
         "required": [
@@ -143,9 +134,8 @@
           "scope",
           "language",
           "commit_message",
-          "update_code_instructions",
-          "coding_complexity",
           "new_parent_id",
+          "updated_code",
           "new_id"
         ],
         "additionalProperties": false
@@ -190,8 +180,9 @@
         "type": "object",
         "properties": {
           "command": {
-            "type": ["string", "array", "null"],
-            "description": "The command to run. Supply either a single shell-style string (parsed with shlex) or an argv list; set to null to omit."
+            "type": ["string", "object", "null"],
+            "description": "The command to run. Supply either a single shell-style string (parsed with shlex) or an argv list; set to null to omit.",
+            "additionalProperties": false
           },
           "check": {
             "type": ["boolean", "null"],
@@ -199,7 +190,8 @@
           },
           "env": {
             "type": ["object", "null"],
-            "description": "Extra environment variables to merge onto the current process environment (key-value string pairs)."
+            "description": "Extra environment variables to merge onto the current process environment (key-value string pairs).",
+            "additionalProperties": false
           },
           "capture_output": {
             "type": ["boolean", "null"],
@@ -241,8 +233,9 @@
             "description": "Shell to use. Prefer 'bash' on Linux/macOS, 'pwsh' on Windows if available."
           },
           "command": {
-            "type": ["string", "array"],
-            "description": "Exact command to run. Provide a single shell string or an argv array."
+            "type": ["string", "object"],
+            "description": "Exact command to run. Provide a single shell string or an argv array.",
+            "additionalProperties": false
           },
           "timeout": {
             "type": ["number", "null"],
@@ -256,14 +249,16 @@
           },
           "check": {
             "type": ["boolean", "null"],
-            "description": "If true, raise on non-zero exit before returning (default false)."
+            "description": "If true, raise on non-zero exit before returning (default false).",
+            "default": false
           },
           "env": {
             "type": ["object", "null"],
-            "description": "Extra environment variables to merge (string key/values)."
+            "description": "Extra environment variables to merge (string key/values).",
+            "additionalProperties": false
           }
         },
-        "required": ["shell", "command"],
+        "required": ["shell", "command", "timeout", "workdir", "check", "env"],
         "additionalProperties": false
       }
     }

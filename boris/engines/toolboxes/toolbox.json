@@ -1,9 +1,9 @@
 {
-  "generate_code": {
+  "invoke_ai_coding_assistant": {
     "type": "function",
     "function": {
-      "name": "generate_code",
-      "description": "Call an agent able of generating code out of a user request.",
+      "name": "invoke_ai_coding_assistant",
+      "description": "Call an agent able of creating / updating / retrieving / deleting coding files out of a user request. It will summarize to you the final process output.",
       "strict": true,
       "parameters": {
         "type": "object",

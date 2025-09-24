@@ -15,11 +15,11 @@ from boris.boriscore.code_structurer.utils import _safe_truncate, _detect_langua
 from boris.boriscore.code_structurer.code_nodes import ProjectNode
 from boris.boriscore.bash_executor.basher import BashExecutor
 from boris.boriscore.ai_clients.ai_clients import ClientOAI, OpenaiApiCallReturnModel
-from boris.boriscore.prompts.prompts import (
+from boris.boriscore.code_structurer.prompts import (
     CODE_GEN_SYS_PROMPT,
     FILEDISK_DESCRIPTION_METADATA,
 )
-from boris.boriscore.models.ai import FileDiskMetadata, Code
+from boris.boriscore.code_structurer.models import FileDiskMetadata, Code
 from boris.boriscore.utils.resources import load_ignore_patterns
 
 
@@ -89,6 +89,10 @@ class CodeProject(ClientOAI, BashExecutor):
         super().__init__(base_path=self.base_path, logger=self.logger, *args, **kwargs)
 
     # ------------------------- helpers -------------------------
+
+    def _generate_node_id(self, parent: ProjectNode, filename: str):
+        id_char_separator = "_"
+        return f"{parent.id.upper()}_{filename.lower()}"
 
     def _log(self, msg: str, log_type: str = "info") -> None:
         log_msg(self.logger, msg, log_type=log_type)
@@ -349,7 +353,7 @@ class CodeProject(ClientOAI, BashExecutor):
         else:
             return f"Successfully created node {new_node.id}"
 
-    # @traceable
+    @traceable
     def generate_code(
         self,
         name: str,
@@ -363,13 +367,15 @@ class CodeProject(ClientOAI, BashExecutor):
         original_request: str = None,
     ) -> Code:
 
+        self._log(msg="Generating Code...")
+
         system_prompt = CODE_GEN_SYS_PROMPT.format(
             name=name,
             description=description,
             scope=scope,
             language=language,
             coding_instructions=coding_instructions,
-            project_structure=self.get_tree_structure(description=True),
+            project_structure=self.get_tree_structure(description=False),
             original_request=original_request,
         )
 
@@ -508,19 +514,24 @@ class CodeProject(ClientOAI, BashExecutor):
         )
 
     def retrieve_node(
-        self, node_id: str, *, dump: bool = True, return_content: bool = False
+        self,
+        node_id: str,
+        *,
+        dump: bool = True,
+        return_content: bool = False,
     ) -> Union[ProjectNode, dict]:
         if self.root is None:
             raise ValueError("Project is empty. Please create ROOT folder first.")
+
         node = self.root.find_node(node_id)
         if node is None:
             raise ValueError(
                 f"Node '{node_id}' not found. "
                 f"Retievable ids: {', '.join(self.ids)}\n"
-                f"from current structure:\n{self.get_tree_structure()}"
+                # f"from current structure:\n{self.get_tree_structure()}"
             )
         if return_content and node.is_file:
-            return f"Name: {node.name}\nDescription: {node.description}\nCoding: {node.code}\nYou cannot fetch anymore information from node {node.id}."
+            return f"Name: {node.name}\nDescription: {node.description}\nCode in coding language [{node.language}]:\n {node.code}\n\nNow, you cannot fetch anymore information from node {node.id}."
         return node.model_dump(deep=False) if dump else node
 
     def update_node(
@@ -636,8 +647,7 @@ class CodeProject(ClientOAI, BashExecutor):
         return_message = (
             f"Node {node_id} correctly updated "
             f"{new_id_message if new_id_message else ''}"
-            f"with parent {node.parent.id}! Updated project structure:\n"
-            f"{self.get_tree_structure()}"
+            f"with parent {node.parent.id}!"
         )
         if error:
             return f"{error}\n{return_message}"
@@ -955,6 +965,7 @@ class CodeProject(ClientOAI, BashExecutor):
     ) -> str:
         connector = "└── " if is_last else "├── "
         marker = "FILE" if node.is_file else "DIR"
+        marker = ""
         if description:
             line = f"{prefix}{connector}{marker} [{node.id}] {node.name}: {node.description}\n"
 
@@ -1191,8 +1202,6 @@ class CodeProject(ClientOAI, BashExecutor):
         created: list[str] = []
         path_to_node: dict[Path, ProjectNode] = {src: self.root}
 
-        import os
-
         # perf/robustness guards
         MAX_FILE_BYTES = int(
             os.getenv("BORIS_MAX_READ_BYTES", "1048576")
@@ -1279,7 +1288,7 @@ class CodeProject(ClientOAI, BashExecutor):
             # Folders
             for d in dirs:
                 folder_path = current_parent / d
-                node_id = f"{parent_node.id.lower()}-{d.lower()}"
+                node_id = self._generate_node_id(parent=parent_node, filename=d)
                 self.create_node(
                     d,
                     is_file=False,
@@ -1321,7 +1330,7 @@ class CodeProject(ClientOAI, BashExecutor):
                         coding_language=lang,
                     )
 
-                node_id = f"{parent_node.id.lower()}-{f.lower()}"
+                node_id = self._generate_node_id(parent=parent_node, filename=f)
                 self.create_node(
                     f,
                     is_file=True,
@@ -1412,7 +1421,9 @@ class CodeProject(ClientOAI, BashExecutor):
                 existing = self._child_by_name(parent, part, is_file=False)
                 if existing is None:
                     node_id = (
-                        f"{parent.id.lower()}-{part.lower()}" if parent.id else None
+                        self._generate_node_id(parent=parent, filename=part)
+                        if parent.id
+                        else None
                     )
                     self.create_node(
                         part,
@@ -1468,7 +1479,9 @@ class CodeProject(ClientOAI, BashExecutor):
                         scope = "unknown"
 
                     node_id = (
-                        f"{parent.id.lower()}-{fname.lower()}" if parent.id else None
+                        self._generate_node_id(parent=parent, filename=fname)
+                        if parent.id
+                        else None
                     )
                     self.create_node(
                         fname,

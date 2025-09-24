@@ -4,7 +4,7 @@ import pathlib
 import logging
 from typing import Optional, Union
 
-from boris.boriscore.agent.reasoning_pipeline import CodeWriter
+from boris.boriscore.agent.coding_agent import CodeWriter
 from boris.boriscore.code_structurer.code_manager import CodeProject
 from boris.boriscore.utils.utils import load_toolbox
 

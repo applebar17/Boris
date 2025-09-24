@@ -180,18 +180,19 @@
       }
     }
   },
-  "run_bash_command": {
+  "run_bash": {
     "type": "function",
     "function": {
-      "name": "run_bash_command",
-      "description": "Execute a shell command inside the configured base path and return stdout, stderr, exit-code and elapsed-time.",
+      "name": "run_bash",
+      "description": "Execute a bash command inside the configured base path and return stdout, stderr, exit-code and elapsed-time.",
       "strict": true,
       "parameters": {
         "type": "object",
         "properties": {
           "command": {
-            "type": ["string", "array", "null"],
-            "description": "The command to run. Supply either a single shell-style string (parsed with shlex) or an argv list; set to null to omit."
+            "type": ["string", "object", "null"],
+            "description": "The command to run. Supply either a single shell-style string (parsed with shlex) or an argv list; set to null to omit.",
+            "additionalProperties": false
           },
           "check": {
             "type": ["boolean", "null"],
@@ -199,7 +200,8 @@
           },
           "env": {
             "type": ["object", "null"],
-            "description": "Extra environment variables to merge onto the current process environment (key-value string pairs)."
+            "description": "Extra environment variables to merge onto the current process environment (key-value string pairs).",
+            "additionalProperties": false
           },
           "capture_output": {
             "type": ["boolean", "null"],
@@ -226,22 +228,47 @@
       }
     }
   },
-
-  "initialize_react_project": {
+  "run_shell": {
     "type": "function",
     "function": {
-      "name": "initialize_react_project",
-      "description": "Helper tool for initializing a react javascript-based project structure: generates a ready-to-run React project structure (src, public, package.json, entry files, stylesheets, etc.) and insert every folder & file as nodes. To be used at the start of the development (empty project root) when required to create a react-based frontend.",
+      "name": "run_shell",
+      "description": "Run a single shell command in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode.",
       "strict": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "app_name": {
+          "shell": {
+            "type": "string",
+            "enum": ["bash", "pwsh", "powershell", "cmd"],
+            "description": "Shell to use. Prefer 'bash' on Linux/macOS, 'pwsh' on Windows if available."
+          },
+          "command": {
+            "type": ["string", "object"],
+            "description": "Exact command to run. Provide a single shell string or an argv array.",
+            "additionalProperties": false
+          },
+          "timeout": {
+            "type": ["number", "null"],
+            "minimum": 1,
+            "maximum": 1200,
+            "description": "Max seconds to wait before timing out. Default 90."
+          },
+          "workdir": {
             "type": ["string", "null"],
-            "description": "Project / application name. Used for the root folder, package.json name, and <title> in index.html."
+            "description": "Optional subdirectory relative to the project root."
+          },
+          "check": {
+            "type": ["boolean", "null"],
+            "description": "If true, raise on non-zero exit before returning (default false).",
+            "default": false
+          },
+          "env": {
+            "type": ["object", "null"],
+            "description": "Extra environment variables to merge (string key/values).",
+            "additionalProperties": false
           }
         },
-        "required": ["app_name"],
+        "required": ["shell", "command", "timeout", "workdir", "check", "env"],
         "additionalProperties": false
       }
     }

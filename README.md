@@ -1,7 +1,3 @@
-Here’s your updated README with PyPI details for **boris-cli** baked in:
-
----
-
 # 🤖 Boris — Chat With Your Codebase (Editor-agnostic, Local-first)
 
 **Boris** is a **terminal AI assistant for developers**. It **scans your repo** into an in-memory tree, lets you **chat** about files and structure, and can **run safe shell** checks. It works with **OpenAI** and **Azure OpenAI** today, with a roadmap for **Anthropic Claude** and **Google Gemini**.

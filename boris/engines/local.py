@@ -7,7 +7,7 @@ from langsmith import traceable
 
 from boris.boriscore.utils.utils import log_msg, load_toolbox
 from boris.boriscore.code_structurer.code_manager import CodeProject
-from boris.boriscore.agent.reasoning_pipeline import CodeWriter
+from boris.boriscore.agent.coding_agent import CodeWriter
 from boris.engines.prompts import CHATBOT
 from boris.boriscore.ai_clients.models import OpenaiApiCallReturnModel
 from boris.boriscore.utils.snapshots import (

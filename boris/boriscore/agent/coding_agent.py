@@ -596,6 +596,4 @@ class CodeWriter(CodeProject):
         #     reasoning_output=plan, chat_message=chat_history, user=user
         # )
 
-        return self.generate_files_chat_v2(
-            reasoning_output=plan, chat_message=chat_history, user=user
-        )
+        return self.generate_files_chat_v2(reasoning_output=plan, user=user)

@@ -19,8 +19,7 @@ class Operation(str, Enum):
     RETRIEVE_AND_CREATE = "retrieve-and-create"
     RETRIEVE_UPDATE_AND_CREATE = "retrieve-update-and-create"
     DELETE = "delete"
-    BASH = "bash-command"
-    SHELL = "shell-command"
+    TERMINAL_COMMANDS = "terminal-command"
 
 
 # ---------- Primitives ----------

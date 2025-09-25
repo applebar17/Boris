@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional, List, Tuple, Dict, Any
-from functools import partial
+from typing import List
 
-from typing import List, Optional
 from boris.boriscore.agent.models import ReasoningPlan, Operation
 
 
@@ -51,7 +49,6 @@ def _operation_allowed_tool_names(op: Operation) -> List[str]:
             "retrieve_node",
         ],
         Operation.DELETE: ["delete_node"],
-        Operation.BASH: ["run_bash"],
-        Operation.SHELL: ["run_shell"],
+        Operation.TERMINAL_COMMANDS: ["run_terminal_commands"],
     }
     return mapping.get(op, [])

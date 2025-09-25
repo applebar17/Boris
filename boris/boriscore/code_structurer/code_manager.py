@@ -13,7 +13,7 @@ from langsmith import traceable
 from boris.boriscore.utils.utils import log_msg, handle_path, load_toolbox
 from boris.boriscore.code_structurer.utils import _safe_truncate, _detect_language
 from boris.boriscore.code_structurer.code_nodes import ProjectNode
-from boris.boriscore.bash_executor.basher import BashExecutor
+from boris.boriscore.terminal.terminal_interface import TerminalExecutor
 from boris.boriscore.ai_clients.ai_clients import ClientOAI, OpenaiApiCallReturnModel
 from boris.boriscore.code_structurer.prompts import (
     CODE_GEN_SYS_PROMPT,
@@ -23,7 +23,7 @@ from boris.boriscore.code_structurer.models import FileDiskMetadata, Code
 from boris.boriscore.utils.resources import load_ignore_patterns
 
 
-class CodeProject(ClientOAI, BashExecutor):
+class CodeProject(ClientOAI, TerminalExecutor):
     """Manages an in‑memory representation of a source‑code project.
 
     Similar to *RemediationTemplate* for legal clauses, this class supports
@@ -90,8 +90,8 @@ class CodeProject(ClientOAI, BashExecutor):
     # ------------------------- helpers -------------------------
 
     def _generate_node_id(self, parent: ProjectNode, filename: str):
-        id_char_separator = "_"
-        return f"{parent.id.upper()}_{filename.lower()}"
+        id_char_separator = "/"
+        return f"{parent.id.lower()}{id_char_separator}{filename.lower()}"
 
     def _log(self, msg: str, log_type: str = "info") -> None:
         log_msg(self.logger, msg, log_type=log_type)
@@ -986,10 +986,10 @@ class CodeProject(ClientOAI, BashExecutor):
         marker = "FILE" if node.is_file else "DIR"
         marker = ""
         if description:
-            line = f"{prefix}{connector}{marker} [{node.id}] {node.name}: {node.description}\n"
+            line = f"{prefix}{connector}{marker} [{node.id}] @ {node.relative_path}: {node.description}\n"
 
         else:
-            line = f"{prefix}{connector}{marker} [{node.id}] {node.name}\n"
+            line = f"{prefix}{connector}{marker} [{node.id}] @ {node.relative_path}\n"
         new_prefix = f"{prefix}{'    ' if is_last else '│   '}"
         for idx, ch in enumerate(node.children):
             line += self._render_tree(

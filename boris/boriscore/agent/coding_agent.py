@@ -93,8 +93,7 @@ class CodeWriter(CodeProject):
             "create_node",
             "update_node",
             "delete_node",
-            "run_bash",
-            "run_shell",
+            "run_terminal_commands",
         ]
 
         # Build tool mapping (with or without AI-assisted ops)
@@ -194,8 +193,7 @@ class CodeWriter(CodeProject):
                 self.retrieve_node, return_content=True, to_emit=True
             ),
             "delete_node": self.delete_node,
-            "run_shell": self.run_shell_tool,
-            "run_bash": self.run_bash_tool,
+            "run_terminal_commands": self.run_terminal_tool,
         }
 
         if self.use_coding_agent_tools:

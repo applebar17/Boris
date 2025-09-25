@@ -47,8 +47,8 @@ class ProjectNode:
     # -----------------------------------------------------------
 
     @property
-    def path(self) -> Path:
-        """Return the *relative* path of this node within the project tree."""
+    def pathlib_path(self) -> Path:
+        """Return the *relative* path of this node as a pathlib.Path."""
         parts: List[str] = []
         node: Optional["ProjectNode"] = self
         while node is not None:
@@ -56,10 +56,19 @@ class ProjectNode:
             node = node.parent
         return Path(*reversed(parts))
 
+    @property
+    def relative_path(self) -> str:
+        """
+        Return the node's path relative to the project root, as a string.
+
+        For the synthetic root node itself, this returns ".".
+        """
+        return self.path(with_root=False)
+
     # ───────────────────────────── utilities ──────────────────────────────
     def path(self, *, with_root: bool = False, sep: str = "/") -> str:
         """
-        Return the absolute path of this node from the project root.
+        Return the path of this node from the project root as a string.
 
         Parameters
         ----------
@@ -69,11 +78,16 @@ class ProjectNode:
         sep : str
             Path separator to use. Defaults to "/".
 
+        Notes
+        -----
+        • When `with_root` is False and the node **is** the root, returns ".".
+        • This function is intended for string paths; use `pathlib_path` for Path.
+
         Example
         -------
-        >>> n.path()           # "src/utils/helpers.py"
-        >>> n.path(with_root=True)
-        'project_root/src/utils/helpers.py'
+        >>> n.path()                # "src/utils/helpers.py"
+        >>> n.path(with_root=True)  # "project_root/src/utils/helpers.py"
+        >>> root.path()             # "."
         """
         parts: list[str] = []
         node: Optional["ProjectNode"] = self
@@ -82,7 +96,8 @@ class ProjectNode:
             if with_root or node.parent is not None:
                 parts.append(node.name)
             node = node.parent
-        return sep.join(reversed(parts))
+        s = sep.join(reversed(parts))
+        return s or "."
 
     # -----------------------------------------------------------
     # Tree manipulation
@@ -186,6 +201,8 @@ class ProjectNode:
             "language": self.language,
             "commit_message": self.commit_message,
             "code": self.code,
+            # include handy, normalized string path (root => ".")
+            "relative_path": self.relative_path,
         }
         if deep:
             d["children"] = [c.model_dump(deep=True) for c in self.children]

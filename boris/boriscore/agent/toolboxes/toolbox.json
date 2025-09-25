@@ -170,59 +170,11 @@
       }
     }
   },
-  "run_bash": {
+  "run_terminal_commands": {
     "type": "function",
     "function": {
-      "name": "run_bash",
-      "description": "Execute a bash command inside the configured base path and return stdout, stderr, exit-code and elapsed-time.",
-      "strict": true,
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "command": {
-            "type": ["string", "object", "null"],
-            "description": "The command to run. Supply either a single shell-style string (parsed with shlex) or an argv list; set to null to omit.",
-            "additionalProperties": false
-          },
-          "check": {
-            "type": ["boolean", "null"],
-            "description": "If true, the executor will raise on non-zero exit status (default is false)."
-          },
-          "env": {
-            "type": ["object", "null"],
-            "description": "Extra environment variables to merge onto the current process environment (key-value string pairs).",
-            "additionalProperties": false
-          },
-          "capture_output": {
-            "type": ["boolean", "null"],
-            "description": "If false, stdout/stderr are streamed live; if true (default) they are captured and returned."
-          },
-          "text": {
-            "type": ["boolean", "null"],
-            "description": "If true (default) stdout/stderr are decoded to UTF-8 text; if false they are returned as raw bytes."
-          },
-          "timeout": {
-            "type": ["number", "null"],
-            "description": "Maximum seconds to allow the command to run before it is terminated (omit or null for no limit)."
-          }
-        },
-        "required": [
-          "command",
-          "check",
-          "env",
-          "capture_output",
-          "text",
-          "timeout"
-        ],
-        "additionalProperties": false
-      }
-    }
-  },
-  "run_shell": {
-    "type": "function",
-    "function": {
-      "name": "run_shell",
-      "description": "Run a single shell command in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode.",
+      "name": "run_terminal_commands",
+      "description": "Run a single or multiple terminal commands in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode.",
       "strict": true,
       "parameters": {
         "type": "object",

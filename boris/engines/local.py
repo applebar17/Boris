@@ -58,7 +58,12 @@ class LocalEngine:
             env_vars=("BORIS_CHATBOT_TOOLBOX"),
         )
 
-        self.chatbot_allowed_tools = ["invoke_ai_coding_assistant"]
+        self.chatbot_allowed_tools = [
+            "invoke_ai_coding_assistant",
+            "retrieve_node",
+            "delete_node",
+            "run_terminal_commands",
+        ]
 
         # Build the in-memory project tree from the filesystem
         self._bootstrap_project_tree()
@@ -151,9 +156,11 @@ class LocalEngine:
             "invoke_ai_coding_assistant": partial(
                 self.cw.invoke_agent, chat_history=history, user=user
             ),
-            # "retrieve_node":partial(self.cw.retrieve_node, return_content=True, to_emit=True),
-            # "run_shell": self.cw.run_shell,
-            # "run_bash": self.cw.run_bash,
+            "retrieve_node": partial(
+                self.cw.retrieve_node, return_content=True, to_emit=True
+            ),
+            "run_terminal_commands": self.cw.run_terminal_tool,
+            "delete_node": self.cw.delete_node,
         }
 
         self.logger.debug("Chat turn (user=%s, messages=%d)", user, len(history))

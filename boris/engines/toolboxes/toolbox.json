@@ -3,12 +3,103 @@
     "type": "function",
     "function": {
       "name": "invoke_ai_coding_assistant",
-      "description": "Call an agent able of creating / updating / retrieving / deleting coding files out of a user request. It will summarize to you the final process output.",
+      "description": "Call an agent able of creating / updating / retrieving / deleting coding files out of a user request. It will summarize to you the final process output. It can as well run temrimanl commands.",
       "strict": true,
       "parameters": {
         "type": "object",
         "properties": {},
         "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  "retrieve_node": {
+    "type": "function",
+    "function": {
+      "name": "retrieve_node",
+      "description": "Return every stored field of a project node (file or folder) so the caller can inspect its metadata and position before deciding to modify or relocate it.",
+      "strict": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "description": "Exact identifier (code or UUID) of the node to fetch."
+          }
+        },
+        "required": ["node_id"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "delete_node": {
+    "type": "function",
+    "function": {
+      "name": "delete_node",
+      "description": "Delete a node. If *cascade* is true, all descendants are removed; otherwise *promote_children* must be true to pull children up one level.",
+      "strict": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": ["string", "null"],
+            "description": "Identifier of the node to delete."
+          },
+          "cascade": {
+            "type": ["boolean", "null"],
+            "description": "If true, delete this node and its entire subtree."
+          },
+          "promote_children": {
+            "type": ["boolean", "null"],
+            "description": "If *cascade* is false and this is true, children are re-attached to the deleted node’s parent."
+          }
+        },
+        "required": ["node_id", "cascade", "promote_children"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "run_terminal_commands": {
+    "type": "function",
+    "function": {
+      "name": "run_terminal_commands",
+      "description": "Run a single or multiple command in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode.",
+      "strict": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shell": {
+            "type": "string",
+            "enum": ["bash", "pwsh", "powershell", "cmd"],
+            "description": "Shell to use. Prefer 'bash' on Linux/macOS, 'pwsh' on Windows if available."
+          },
+          "command": {
+            "type": ["string", "object"],
+            "description": "Exact command to run. Provide a single shell string or an argv array.",
+            "additionalProperties": false
+          },
+          "timeout": {
+            "type": ["number", "null"],
+            "minimum": 1,
+            "maximum": 1200,
+            "description": "Max seconds to wait before timing out. Default 90."
+          },
+          "workdir": {
+            "type": ["string", "null"],
+            "description": "Optional subdirectory relative to the project root."
+          },
+          "check": {
+            "type": ["boolean", "null"],
+            "description": "If true, raise on non-zero exit before returning (default false).",
+            "default": false
+          },
+          "env": {
+            "type": ["object", "null"],
+            "description": "Extra environment variables to merge (string key/values).",
+            "additionalProperties": false
+          }
+        },
+        "required": ["shell", "command", "timeout", "workdir", "check", "env"],
         "additionalProperties": false
       }
     }

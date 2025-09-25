@@ -26,7 +26,7 @@ class Operation(str, Enum):
 # ---------- Primitives ----------
 
 
-class MinimalFile(BaseModel):
+class RelevantFiles(BaseModel):
     """A single minimally-required file to retrieve before editing/creating."""
 
     id: Optional[str] = Field(..., description="Exact node id to retrieve")
@@ -50,7 +50,7 @@ class Action(BaseModel):
     """
     A concrete action the agent can execute.
     - Must be atomic and idempotent.
-    - `minimal_files_to_retrieve` should be as small as possible (<= 5).
+    - `files_to_retrieve` should be as small as possible (<= 5).
     """
 
     kind: Literal["action"] = "action"
@@ -60,9 +60,9 @@ class Action(BaseModel):
     )
     operation: Operation
 
-    minimal_files_to_retrieve: List[MinimalFile] = Field(
+    files_to_retrieve: List[RelevantFiles] = Field(
         default_factory=list,
-        description="Strict minimal context (target + at most one integration point, etc.). Maximum 5 files.",
+        description="Relevant context (target + at most 2 to 3 integration point, etc.). Maximum 5 files.",
     )
 
     target_path: str = Field(
@@ -93,29 +93,11 @@ class Action(BaseModel):
             raise ValueError("target_path must not be the project root")
         return v
 
-    @field_validator("minimal_files_to_retrieve")
+    @field_validator("files_to_retrieve")
     @classmethod
-    def max_three_minimal_files(cls, v: List[MinimalFile]) -> List[MinimalFile]:
+    def max_three_minimal_files(cls, v: List[RelevantFiles]) -> List[RelevantFiles]:
         if len(v) > 5:
-            raise ValueError("minimal_files_to_retrieve must list at most 5 files")
-        return v
-
-    @field_validator("minimal_files_to_retrieve")
-    @classmethod
-    def update_requires_retrieving_target(cls, v: List[MinimalFile], info):
-        op: Operation = info.data.get("operation")
-        target_path: str = info.data.get("target_path", "")
-        if (
-            op == Operation.RETRIEVE_UPDATE_AND_CREATE
-            or op == Operation.RETRIEVE_AND_CREATE
-            or op == Operation.RETRIEVE_AND_UPDATE
-            and target_path
-        ):
-            if not any(mf.id == target_path for mf in v):
-                raise ValueError(
-                    "Requested operation requires retrieving the target file first "
-                    "(include target_path in minimal_files_to_retrieve)."
-                )
+            raise ValueError("files_to_retrieve must list at most 5 files")
         return v
 
 

@@ -39,7 +39,7 @@ class LocalAdapter(EngineProtocol):
         self.impl = LocalEngine(logger=logger.getChild("engines.local"))
 
     def chat(self, history: list[dict], user: str) -> dict:
-        return self.impl.chat(history=history, user=user)
+        return self.impl.chat_local_engine(history=history, user=user)
 
     def set_event_sink(self, on_event):
         if hasattr(self.impl, "set_event_sink"):

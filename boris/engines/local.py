@@ -130,7 +130,7 @@ class LocalEngine:
     # Chat API
     # ──────────────────────────────────────────────────────────────────────────
     @traceable
-    def chat(self, history: list[dict], user: str) -> dict:
+    def chat_local_engine(self, history: list[dict], user: str) -> dict:
         """
         Execute one round of chat against the local agent.
 

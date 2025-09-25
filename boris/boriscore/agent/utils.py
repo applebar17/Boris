@@ -42,10 +42,14 @@ def _operation_allowed_tool_names(op: Operation) -> List[str]:
             pass
 
     mapping = {
-        Operation.RETRIEVE: [],  # no code edits; skip coder call
-        Operation.RETRIEVE_AND_UPDATE: ["update_node"],
-        Operation.RETRIEVE_AND_CREATE: ["create_node"],
-        Operation.RETRIEVE_UPDATE_AND_CREATE: ["create_node", "update_node"],
+        Operation.RETRIEVE: ["retrieve_node"],
+        Operation.RETRIEVE_AND_UPDATE: ["update_node", "retrieve_node"],
+        Operation.RETRIEVE_AND_CREATE: ["create_node", "retrieve_node"],
+        Operation.RETRIEVE_UPDATE_AND_CREATE: [
+            "create_node",
+            "update_node",
+            "retrieve_node",
+        ],
         Operation.DELETE: ["delete_node"],
         Operation.BASH: ["run_bash"],
         Operation.SHELL: ["run_shell"],

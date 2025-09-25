@@ -3,7 +3,7 @@ import json
 import logging
 from pathlib import Path
 from functools import partial
-from typing import Optional, Union, Iterable, List, Dict, Any, Tuple
+from typing import Optional, Union, Iterable, List, Dict, Any, Tuple, Callable
 
 from dotenv import load_dotenv
 from openai.types.chat.chat_completion_message_param import (
@@ -101,6 +101,10 @@ class CodeWriter(CodeProject):
         self.use_coding_agent_tools = use_coding_agent_tools
         self.update_tool_mapping(original_request=None)
 
+        self.on_event: Optional[Callable[[str, Path], None]] = (
+            None  # global sink for CRUD events
+        )
+
         super().__init__(  # CodeProject init
             logger=logger,
             base_path=self.base_path,
@@ -108,6 +112,29 @@ class CodeWriter(CodeProject):
             *args,
             **kwargs,
         )
+
+    # -------------------- helpers --------------------
+
+    def _emit(
+        self,
+        event: str,
+        path: Optional[Path] = None,
+        on_event: Optional[Callable[[str, Path], None]] = None,
+    ) -> None:
+        # Prefer explicit callback, else fall back to project-level sink
+        sink = on_event or getattr(self, "on_event", None)
+        if sink:
+            try:
+                sink(event, path)
+                return
+            except Exception:
+                pass  # never break the operation because the UI hook failed
+
+        msg = f"{event}: {path}" if path else event
+        if hasattr(self, "_log") and callable(self._log):
+            self._log(msg)
+        else:
+            logging.getLogger(__name__).info(msg)
 
     # -------------------- logging --------------------
 
@@ -254,7 +281,7 @@ class CodeWriter(CodeProject):
 
         retrieve_bullets = CodeWriter._as_bullets(
             f"{CodeWriter._mf_path_or_id(mf)} — {mf.why}"
-            for mf in getattr(action, "minimal_files_to_retrieve", [])
+            for mf in getattr(action, "files_to_retrieve", [])
         )
         edit_bullets = CodeWriter._as_bullets(getattr(action, "edit_sketch", []))
         expected_outcome_block = CodeWriter._as_code_block(
@@ -339,23 +366,20 @@ class CodeWriter(CodeProject):
             raise RuntimeError("retrieve_node tool is missing from the toolbox")
 
         # Build messages: one user turn with tree + action
-        user_msg = (
-            "Project tree:\n"
-            f"{tree_structure}\n\n"
-            "Action to plan:\n"
-            f"{reasoning_block}\n"
-        )
+        user_msg = "Action to plan:\n" f"{reasoning_block}\n"
         chat_messages = [ChatCompletionUserMessageParam(content=user_msg, role="user")]
 
         # Ask client for structured output directly
         params = self.handle_params(
-            system_prompt=ACTION_PLANNER_SYSTEM_PROMPT,
+            system_prompt=ACTION_PLANNER_SYSTEM_PROMPT.format(
+                project_structure=tree_structure
+            ),
             chat_messages=chat_messages,
             temperature=temperature,
             model=self.llm_model,
             user=user,
             tools=[retrieve_tool],  # ONLY retriever exposed
-            parallel_tool_calls=False,
+            parallel_tool_calls=True,
             response_format=ActionPlanningOutput,
         )
 
@@ -383,7 +407,8 @@ class CodeWriter(CodeProject):
     ) -> ReasoningPlan:
         """Plan actions with the reasoning model, given the current project tree."""
         self._log("Reasoning step chat")
-
+        # uses CodeProject._emit → will go to CLI sink if present
+        self._emit("reasoning...")
         project_structure = self.get_tree_structure(description=True)
 
         # Normalize chat_messages to a list
@@ -501,14 +526,18 @@ class CodeWriter(CodeProject):
             if write_to_disk:
                 self.write_to_disk(dst=self.base_path)
 
-        summary = self.summarize_action_outputs(
-            original_request=original_request,
-            reasoning_output=reasoning_output,
-            output_messages=output_messages,
-            user=user,
-        )
-        self._log("Returning final summary of the actions to the chatbot.")
-        return summary
+        if len(output_messages) > 1:
+            summary = self.summarize_action_outputs(
+                original_request=original_request,
+                reasoning_output=reasoning_output,
+                output_messages=output_messages,
+                user=user,
+            )
+            self._log("Returning final summary of the actions to the chatbot.")
+            return summary
+
+        else:
+            return output_messages[0]
 
     @traceable
     def generate_files_chat_v2(
@@ -556,6 +585,11 @@ class CodeWriter(CodeProject):
             tools_to_send, selected_names, filtered_mapping = (
                 self._select_tools_for_operation(action.operation)
             )
+
+            if "retrieve_node" in filtered_mapping:
+                filtered_mapping["retrieve_node"] = partial(
+                    self.retrieve_node, return_content=True, to_emit=False
+                )
 
             # If this is a pure RETRIEVE action, skip codegen entirely.
             if not selected_names:

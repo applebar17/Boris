@@ -545,8 +545,10 @@ class CodeProject(ClientOAI, BashExecutor):
             return (
                 f"Name: {node.name}\n"
                 f"Description: {node.description}\n"
-                f"Code in coding language [{node.language}]:\n {node.code}\n\n"
-                f"Now, you cannot fetch anymore information from node {node.id}."
+                f"Code in coding language [{node.language}]:\n\n---"
+                f"{node.code}"
+                "\n\n---"
+                # f"Now, you cannot fetch anymore information from node {node.id}."
             )
 
         return node.model_dump(deep=False) if dump else node

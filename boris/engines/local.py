@@ -3,11 +3,12 @@ import pathlib
 import logging
 from typing import Optional
 from functools import partial
+from langsmith import traceable
 
 from boris.boriscore.utils.utils import log_msg, load_toolbox
 from boris.boriscore.code_structurer.code_manager import CodeProject
-from boris.boriscore.agent.reasoning_pipeline import CodeWriter
-from boris.boriscore.prompts.prompts import CHATBOT
+from boris.boriscore.agent.coding_agent import CodeWriter
+from boris.engines.prompts import CHATBOT
 from boris.boriscore.ai_clients.models import OpenaiApiCallReturnModel
 from boris.boriscore.utils.snapshots import (
     load_path as _snap_load_path,
@@ -57,7 +58,12 @@ class LocalEngine:
             env_vars=("BORIS_CHATBOT_TOOLBOX"),
         )
 
-        self.chatbot_allowed_tools = ["generate_code"]
+        self.chatbot_allowed_tools = [
+            "invoke_ai_coding_assistant",
+            "retrieve_node",
+            "delete_node",
+            "run_terminal_commands",
+        ]
 
         # Build the in-memory project tree from the filesystem
         self._bootstrap_project_tree()
@@ -128,7 +134,8 @@ class LocalEngine:
     # ──────────────────────────────────────────────────────────────────────────
     # Chat API
     # ──────────────────────────────────────────────────────────────────────────
-    def chat(self, history: list[dict], user: str) -> dict:
+    @traceable
+    def chat_local_engine(self, history: list[dict], user: str) -> dict:
         """
         Execute one round of chat against the local agent.
 
@@ -146,9 +153,14 @@ class LocalEngine:
             self._bootstrap_project_tree()
 
         chatbot_tools_mapping = {
-            "generate_code": partial(self.cw.chat, chat_history=history, user=user),
-            # "run_shell": self.cw.run_shell_tool,
-            # "run_bash": self.cw.run_bash_tool,
+            "invoke_ai_coding_assistant": partial(
+                self.cw.invoke_agent, chat_history=history, user=user
+            ),
+            "retrieve_node": partial(
+                self.cw.retrieve_node, return_content=True, to_emit=True
+            ),
+            "run_terminal_commands": self.cw.run_terminal_tool,
+            "delete_node": self.cw.delete_node,
         }
 
         self.logger.debug("Chat turn (user=%s, messages=%d)", user, len(history))
@@ -165,9 +177,10 @@ class LocalEngine:
                 if name in self.chatbot_allowed_tools
             ],
             user=user,
+            parallel_tool_calls=False,
         )
         answer_obj: OpenaiApiCallReturnModel = self.cw.call_openai(
-            params=params, tools_mapping=chatbot_tools_mapping
+            params=params, tools_mapping=chatbot_tools_mapping, init_tool_counter=True
         )
 
         # Optionally: persist changes to disk (out of scope for now).

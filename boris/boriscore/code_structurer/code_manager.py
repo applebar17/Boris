@@ -13,17 +13,17 @@ from langsmith import traceable
 from boris.boriscore.utils.utils import log_msg, handle_path, load_toolbox
 from boris.boriscore.code_structurer.utils import _safe_truncate, _detect_language
 from boris.boriscore.code_structurer.code_nodes import ProjectNode
-from boris.boriscore.bash_executor.basher import BashExecutor
+from boris.boriscore.terminal.terminal_interface import TerminalExecutor
 from boris.boriscore.ai_clients.ai_clients import ClientOAI, OpenaiApiCallReturnModel
-from boris.boriscore.prompts.prompts import (
+from boris.boriscore.code_structurer.prompts import (
     CODE_GEN_SYS_PROMPT,
     FILEDISK_DESCRIPTION_METADATA,
 )
-from boris.boriscore.models.ai import FileDiskMetadata, Code
+from boris.boriscore.code_structurer.models import FileDiskMetadata, Code
 from boris.boriscore.utils.resources import load_ignore_patterns
 
 
-class CodeProject(ClientOAI, BashExecutor):
+class CodeProject(ClientOAI, TerminalExecutor):
     """Manages an in‑memory representation of a source‑code project.
 
     Similar to *RemediationTemplate* for legal clauses, this class supports
@@ -37,7 +37,6 @@ class CodeProject(ClientOAI, BashExecutor):
         output_project_path: Path = Path("data/processed"),
         logger: Optional[logging.Logger] = None,
         init_root: bool = True,
-        to_ignore_file_path: Path = "boris/boriscore/code_structurer/.cmignore",
         code_project_toolbox_path: Path = Path(
             "boris/boriscore/code_structurer/toolboxes/toolbox.json"
         ),
@@ -90,12 +89,18 @@ class CodeProject(ClientOAI, BashExecutor):
 
     # ------------------------- helpers -------------------------
 
+    def _generate_node_id(self, parent: ProjectNode, filename: str):
+        id_char_separator = "/"
+        return f"{parent.id.lower()}{id_char_separator}{filename.lower()}"
+
     def _log(self, msg: str, log_type: str = "info") -> None:
         log_msg(self.logger, msg, log_type=log_type)
 
     def update_tool_mapping_CP(self, return_content: bool = False) -> None:
         self.code_project_tools_mapping = {
-            "retrieve_node": partial(self.retrieve_node, return_content=return_content),
+            "retrieve_node": partial(
+                self.retrieve_node, return_content=return_content, to_emit=True
+            ),
         }
 
     def _assert_unique(self, id: Optional[str]):
@@ -349,178 +354,43 @@ class CodeProject(ClientOAI, BashExecutor):
         else:
             return f"Successfully created node {new_node.id}"
 
-    # @traceable
-    def generate_code(
-        self,
-        name: str,
-        *,
-        description: str = "",
-        scope: str = "",
-        language: Optional[str] = None,
-        current_code: str = None,
-        coding_complexity: bool = False,
-        coding_instructions: str = None,
-        original_request: str = None,
-    ) -> Code:
-
-        system_prompt = CODE_GEN_SYS_PROMPT.format(
-            name=name,
-            description=description,
-            scope=scope,
-            language=language,
-            coding_instructions=coding_instructions,
-            project_structure=self.get_tree_structure(description=True),
-            original_request=original_request,
-        )
-
-        self.update_tool_mapping_CP(return_content=True)
-
-        if current_code:
-            chat_message = f"This is my current code for file {name}:\n{current_code}\nUpdate it accordingly to the request."
-        else:
-            chat_message = (
-                f"Create file {name}. Description: {description}. Scope: {scope}."
-            )
-
-        if self.root.count_files() <= 2:
-            tools = None
-
-        else:
-            tools = [
-                tool
-                for name, tool in self.code_project_toolbox.items()
-                if name in self.code_project_allowed_tools
-            ]
-
-        params = self.handle_params(
-            system_prompt=system_prompt,
-            chat_messages=chat_message,
-            model=self.model_coding,
-            temperature=None if self.model_coding else 0.0,
-            tools=tools,
-            response_format=Code,
-        )
-
-        code_output = self.call_openai(
-            params=params, tools_mapping=self.code_project_tools_mapping
-        )
-
-        code_output_parsed = Code(**json.loads(s=code_output.message_content))
-
-        self._log("Successfully created Code agenticly!")
-
-        return code_output_parsed
-
-    # TODO: implement method in specific pipeline and update update_code thorugh aI
-
-    # @traceable
-    def create_node_ai_agent(
-        self,
-        name: str,
-        *,
-        is_file: bool = False,
-        description: str = "",
-        scope: str = "",
-        language: Optional[str] = None,
-        commit_message: Optional[str] = None,
-        parent_id: str = "ROOT",
-        node_id: Optional[str] = None,
-        coding_complexity: bool = False,
-        coding_instructions: str = None,
-        original_request: str = None,
-        create_node_on_disk: bool = True,
-        # NEW FS controls
-        dst: Optional[Path] = None,
-        dry_run: bool = False,
-        on_event: Optional[Callable[[str, Path], None]] = None,
-    ) -> ProjectNode | str:
-
-        self._assert_unique(node_id)
-
-        comments = None
-        if not parent_id:
-            if (node_id and node_id.lower() == "root") or not self.root:
-                new_node = ProjectNode(
-                    name,
-                    is_file=is_file,
-                    description=description,
-                    scope=scope,
-                    language=language,
-                    commit_message=commit_message,
-                    id=node_id,
-                )
-            else:
-                return "You must return a valid parent_id! The only node not allowed to miss parent_id is the Root node."
-        else:
-            parent: ProjectNode = self.retrieve_node(parent_id, dump=False)  # type: ignore[arg-type]
-            parent = self._resolve_folder_parent(parent)
-            self._assert_unique_child_name(parent, name)
-
-            # If file, generate code with full path context
-            if is_file:
-                full_name_path = f"{parent.path(with_root=True)}/{name}"
-                code_obj: Code = self.generate_code(
-                    name=full_name_path,
-                    description=description,
-                    scope=scope,
-                    language=language,
-                    current_code=None,
-                    coding_complexity=coding_complexity,
-                    coding_instructions=coding_instructions,
-                    original_request=original_request,
-                )
-                code = code_obj.code
-                comments = code_obj.comments
-                self._log(f"Code comments: {comments}")
-            else:
-                code = None
-
-            new_node = ProjectNode(
-                name,
-                is_file=is_file,
-                description=description,
-                scope=scope,
-                language=language,
-                commit_message=commit_message,
-                id=node_id,
-                code=code,
-            )
-            parent.add_child(new_node)
-
-        self._register(new_node.id)
-
-        if create_node_on_disk:
-            root_dst = self._root_dst(dst)
-            if not root_dst.exists() and not dry_run:
-                root_dst.mkdir(parents=True, exist_ok=True)
-                self._emit("created dir", root_dst, on_event)
-
-            self.write_to_disk(
-                dst=root_dst,
-                only_node_id=new_node.id,
-                dry_run=dry_run,
-                on_event=on_event,
-            )
-
-        return (
-            f"Successfully created node {new_node.id} under parent {parent_id}. "
-            f"Comments on the actions taken: {comments}"
-        )
-
     def retrieve_node(
-        self, node_id: str, *, dump: bool = True, return_content: bool = False
+        self,
+        node_id: str,
+        *,
+        dump: bool = True,
+        return_content: bool = False,
+        to_emit: bool = False,
     ) -> Union[ProjectNode, dict]:
         if self.root is None:
             raise ValueError("Project is empty. Please create ROOT folder first.")
+
         node = self.root.find_node(node_id)
         if node is None:
             raise ValueError(
                 f"Node '{node_id}' not found. "
                 f"Retievable ids: {', '.join(self.ids)}\n"
-                f"from current structure:\n{self.get_tree_structure()}"
+                # f"from current structure:\n{self.get_tree_structure()}"
             )
+        if to_emit:
+            if getattr(node, "is_file", False):
+                try:
+                    p = self.path_for(node, root_dst=self.base_path)
+                except Exception:
+                    p = Path(node.name)
+                # uses CodeProject._emit → will go to CLI sink if present
+                self._emit("reading file", p)
+
         if return_content and node.is_file:
-            return f"Name: {node.name}\nDescription: {node.description}\nCoding: {node.code}\nYou cannot fetch anymore information from node {node.id}."
+            return (
+                f"Name: {node.name}\n"
+                f"Description: {node.description}\n"
+                f"Code in coding language [{node.language}]:\n\n---"
+                f"{node.code}"
+                "\n\n---"
+                # f"Now, you cannot fetch anymore information from node {node.id}."
+            )
+
         return node.model_dump(deep=False) if dump else node
 
     def update_node(
@@ -532,7 +402,7 @@ class CodeProject(ClientOAI, BashExecutor):
         scope: Optional[str] = None,
         language: Optional[str] = None,
         commit_message: Optional[str] = None,
-        updated_code: Optional[str] = None,
+        updated_file: Optional[str] = None,
         new_parent_id: Optional[str] = None,
         new_id: Optional[str] = None,
         update_node_on_disk: bool = True,
@@ -599,7 +469,7 @@ class CodeProject(ClientOAI, BashExecutor):
             scope=scope,
             language=language,
             commit_message=commit_message,
-            code=updated_code,
+            code=updated_file,
             id=new_id,
         )
 
@@ -636,143 +506,7 @@ class CodeProject(ClientOAI, BashExecutor):
         return_message = (
             f"Node {node_id} correctly updated "
             f"{new_id_message if new_id_message else ''}"
-            f"with parent {node.parent.id}! Updated project structure:\n"
-            f"{self.get_tree_structure()}"
-        )
-        if error:
-            return f"{error}\n{return_message}"
-        return return_message
-
-    # @traceable
-    def update_node_ai_agent(
-        self,
-        node_id: str,
-        *,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        scope: Optional[str] = None,
-        language: Optional[str] = None,
-        commit_message: Optional[str] = None,
-        update_code_instructions: Optional[str] = None,
-        coding_complexity: Optional[str] = None,
-        new_parent_id: Optional[str] = None,
-        new_id: Optional[str] = None,
-        original_request: str = None,
-        update_node_on_disk: bool = True,
-        # NEW FS controls
-        dst: Optional[Path] = None,
-        dry_run: bool = False,
-        on_event: Optional[Callable[[str, Path], None]] = None,
-    ) -> str:
-        node: ProjectNode = self.retrieve_node(node_id, dump=False)  # type: ignore[arg-type]
-        if self.root is None:
-            raise ValueError("Project tree empty – nothing to update.")
-
-        # --- optionally generate new code for files ---
-        if node.is_file and update_code_instructions:
-            updated_code_obj = self.generate_code(
-                name=name if name else node.path(with_root=True),
-                description=description if description else node.description,
-                scope=scope if scope else node.scope,
-                current_code=node.code,
-                coding_complexity=coding_complexity,
-                coding_instructions=update_code_instructions,
-                original_request=original_request,
-            )
-            updated_code, comments = updated_code_obj.code, updated_code_obj.comments
-        else:
-            updated_code, comments = None, None
-
-        root_dst = self._root_dst(dst)
-        if update_node_on_disk and not root_dst.exists() and not dry_run:
-            root_dst.mkdir(parents=True, exist_ok=True)
-            self._emit("created dir", root_dst, on_event)
-
-        # --- ID change bookkeeping ---
-        new_id_message = None
-        if new_id:
-            self._deregister({node.id})
-            self._assert_unique(new_id)
-            self._register(new_id)
-            new_id_message = f"with new id: [{new_id}] "
-
-        # --- capture old on-disk path BEFORE mutation ---
-        old_path = self.path_for(node, root_dst=root_dst)
-
-        # --- determine future parent & name ---
-        prospective_parent: ProjectNode
-        error = None
-        if new_parent_id is not None:
-            prospective_parent = self.retrieve_node(new_parent_id, dump=False)  # type: ignore[arg-type]
-            if prospective_parent.is_file:
-                error = (
-                    f"Cannot update file from parent which is a file. "
-                    f"Considering as parent folder [{prospective_parent.parent.id}]"
-                )
-            prospective_parent = self._resolve_folder_parent(prospective_parent)
-        else:
-            prospective_parent = node.parent  # type: ignore[assignment]
-
-        prospective_name = name if name is not None else node.name
-        self._assert_unique_child_name(
-            prospective_parent, prospective_name, exclude=node
-        )
-
-        # --- perform move in the tree if parent changes ---
-        if new_parent_id is not None and prospective_parent is not node.parent:
-            if prospective_parent is node or self._is_descendant(
-                node, prospective_parent
-            ):
-                raise ValueError("Invalid move – cycle detected.")
-            if node.parent:
-                node.parent.remove_child(node)
-            prospective_parent.add_child(node)
-
-        # --- mutate node fields (incl. code, id) ---
-        node.update(
-            name=prospective_name,
-            description=description,
-            scope=scope,
-            language=language,
-            commit_message=commit_message,
-            code=updated_code,
-            id=new_id,
-        )
-
-        # --- compute new path AFTER mutation ---
-        new_path = self.path_for(node, root_dst=root_dst)
-
-        # --- filesystem effects ---
-        if update_node_on_disk:
-            if old_path != new_path:
-                if not dry_run:
-                    new_path.parent.mkdir(parents=True, exist_ok=True)
-                if old_path.exists():
-                    if not dry_run:
-                        shutil.move(str(old_path), str(new_path))
-                    self._emit(
-                        "moved file" if node.is_file else "moved dir",
-                        new_path,
-                        on_event,
-                    )
-                else:
-                    self._emit("missing on disk (skipped move)", old_path, on_event)
-
-            # Persist the (possibly updated) node contents
-            self.write_to_disk(
-                dst=root_dst,
-                only_node_id=node.id,
-                dry_run=dry_run,
-                on_event=on_event,
-            )
-
-        # --- return message ---
-        return_message = (
-            f"Node {node_id} correctly updated "
-            f"{new_id_message if new_id_message else ''}"
-            f"with parent {node.parent.id if node.parent else 'None'}! Updated project structure:\n"
-            f"{self.get_tree_structure()}. "
-            f"Comments about update action: {comments}"
+            f"with parent {node.parent.id}!"
         )
         if error:
             return f"{error}\n{return_message}"
@@ -955,11 +689,12 @@ class CodeProject(ClientOAI, BashExecutor):
     ) -> str:
         connector = "└── " if is_last else "├── "
         marker = "FILE" if node.is_file else "DIR"
+        marker = ""
         if description:
-            line = f"{prefix}{connector}{marker} [{node.id}] {node.name}: {node.description}\n"
+            line = f"{prefix}{connector}{marker} [{node.id}] @ {node.relative_path}: {node.description}\n"
 
         else:
-            line = f"{prefix}{connector}{marker} [{node.id}] {node.name}\n"
+            line = f"{prefix}{connector}{marker} [{node.id}] @ {node.relative_path}\n"
         new_prefix = f"{prefix}{'    ' if is_last else '│   '}"
         for idx, ch in enumerate(node.children):
             line += self._render_tree(
@@ -1043,7 +778,8 @@ class CodeProject(ClientOAI, BashExecutor):
                         if not dry_run:
                             target.write_text(new_content, encoding="utf-8")
                     else:
-                        status = "unchanged file"
+                        # status = "unchanged file"
+                        pass
                 else:
                     status = "created file"
                     if not dry_run:
@@ -1065,7 +801,8 @@ class CodeProject(ClientOAI, BashExecutor):
                     base.mkdir(parents=True, exist_ok=True)
                 self._emit("created dir", base)
             else:
-                self._emit("dir exists", base)
+                # self._emit("dir exists", base)
+                pass
             for ch in getattr(node, "children", []) or []:
                 if ch.is_file:
                     write_file(ch)
@@ -1191,8 +928,6 @@ class CodeProject(ClientOAI, BashExecutor):
         created: list[str] = []
         path_to_node: dict[Path, ProjectNode] = {src: self.root}
 
-        import os
-
         # perf/robustness guards
         MAX_FILE_BYTES = int(
             os.getenv("BORIS_MAX_READ_BYTES", "1048576")
@@ -1279,7 +1014,7 @@ class CodeProject(ClientOAI, BashExecutor):
             # Folders
             for d in dirs:
                 folder_path = current_parent / d
-                node_id = f"{parent_node.id.lower()}-{d.lower()}"
+                node_id = self._generate_node_id(parent=parent_node, filename=d)
                 self.create_node(
                     d,
                     is_file=False,
@@ -1321,7 +1056,7 @@ class CodeProject(ClientOAI, BashExecutor):
                         coding_language=lang,
                     )
 
-                node_id = f"{parent_node.id.lower()}-{f.lower()}"
+                node_id = self._generate_node_id(parent=parent_node, filename=f)
                 self.create_node(
                     f,
                     is_file=True,
@@ -1412,7 +1147,9 @@ class CodeProject(ClientOAI, BashExecutor):
                 existing = self._child_by_name(parent, part, is_file=False)
                 if existing is None:
                     node_id = (
-                        f"{parent.id.lower()}-{part.lower()}" if parent.id else None
+                        self._generate_node_id(parent=parent, filename=part)
+                        if parent.id
+                        else None
                     )
                     self.create_node(
                         part,
@@ -1468,7 +1205,9 @@ class CodeProject(ClientOAI, BashExecutor):
                         scope = "unknown"
 
                     node_id = (
-                        f"{parent.id.lower()}-{fname.lower()}" if parent.id else None
+                        self._generate_node_id(parent=parent, filename=fname)
+                        if parent.id
+                        else None
                     )
                     self.create_node(
                         fname,

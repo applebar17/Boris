@@ -48,6 +48,9 @@ EVENT_ICONS = {
     "deleted dir": "🗑️📁",
     "moved": "📦",
     "renamed": "🔁",
+    "reading file": "📖",
+    "reasoning...": "🧠",
+    "executing command": "⏭",
     # High-level (in‑memory) events if you emit them later:
     "created node": "🌱",
     "updated node": "🔧",
@@ -68,6 +71,9 @@ EVENT_STYLES = {
     "created node": "green",
     "updated node": "yellow",
     "deleted node": "red",
+    "reading file": "blue",
+    "reasoning...": "magenta",
+    "executing command": "blue",
 }
 
 Pathish = Union[str, Path]
@@ -101,16 +107,20 @@ def make_event_printer(
         except Exception:
             return str(p)
 
-    def _print(event: str, path: Path) -> None:
+    def _print(event: str, path: Optional[Union[Path, str]] = None) -> None:
         icon = EVENT_ICONS.get(event, "•")
         style = EVENT_STYLES.get(event, "bold")
         line = Text.assemble(
             f"{icon} ",
             (event, style),
-            " ",
-            ("— ", "dim"),
-            (_rel(path), "dim"),
         )
+        if path:
+            line_path = Text.assemble(
+                " ",
+                ("— ", "dim"),
+                (_rel(path), "dim"),
+            )
+            line = line + line_path
         console.print(line)
 
     return _print

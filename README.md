@@ -247,13 +247,9 @@ boris [COMMAND]
 
 ---
 
-## 🧪 Roadmap
+## 🧪 Repository Study Note
 
-* Unit tests for config precedence, ignore/pruning, safe-mode policies, and tool loop
-* Optional VS Code integration
-* Remote engine (FastAPI) & project registry
-* First-class Claude / Gemini adapters
-* Expanded safe-mode & code-gen tooling
+When Boris starts, he always studies the repository. Therefore, the first initialization analyzes the entire repository which may take more time. On subsequent starts, it syncs with the current project and studies only the new changes relative to the previous state.
 
 ---
 

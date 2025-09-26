@@ -11,7 +11,7 @@ import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Mapping, Sequence, Literal, List, Set
+from typing import Optional, Mapping, Sequence, Literal, List, Set, Callable
 
 from boris.boriscore.utils.utils import log_msg
 
@@ -38,7 +38,7 @@ class CommandResult:
     truncated: bool = False  # True if stdout/stderr were truncated
 
 
-class BashExecutor:
+class TerminalExecutor:
     """
     Multi-shell command executor (bash / PowerShell / cmd) scoped to a project directory.
 
@@ -101,6 +101,10 @@ class BashExecutor:
         self._ansi_re = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
         self._max_output_chars = int(max_output_chars)
 
+        self.on_event: Optional[Callable[[str, Path], None]] = (
+            None  # global sink for CRUD events
+        )
+
     def _log(self, msg: str, log_type: str = "info") -> None:
         log_msg(self.logger, msg, log_type=log_type)
 
@@ -151,6 +155,27 @@ class BashExecutor:
         Prefer cross-platform pwsh; otherwise Windows powershell.exe.
         """
         return shutil.which("pwsh") or shutil.which("powershell")
+
+    def _emit(
+        self,
+        event: str,
+        command: Optional[str] = None,
+        on_event: Optional[Callable[[str, Path], None]] = None,
+    ) -> None:
+        # Prefer explicit callback, else fall back to project-level sink
+        sink = on_event or getattr(self, "on_event", None)
+        if sink:
+            try:
+                sink(event, command)
+                return
+            except Exception:
+                pass  # never break the operation because the UI hook failed
+
+        msg = f"{event}: {command}" if command else event
+        if hasattr(self, "_log") and callable(self._log):
+            self._log(msg)
+        else:
+            logging.getLogger(__name__).info(msg)
 
     # ------------------------------------------------------------
     # Core execution
@@ -403,7 +428,7 @@ class BashExecutor:
             parts.append("_note: output truncated to keep it concise._\n")
         return "".join(parts)
 
-    def run_shell_tool(
+    def run_terminal_tool(
         self,
         shell: Shell,
         command: str | list[str],
@@ -426,6 +451,9 @@ class BashExecutor:
                 if isinstance(command, list)
                 else str(command)
             )
+
+            self._emit("executing command", cmd_str)
+
             res = self.run_shell(
                 shell,
                 cmd_str,
@@ -442,55 +470,3 @@ class BashExecutor:
             # Defensive: never propagate into the tool-calling agent
             return f"🚫 Execution error: {e}"
         return self.format_for_llm(res)
-
-    def run_bash_tool(
-        self,
-        *,
-        command: str | list[str] | None,
-        check: Optional[bool] = None,
-        env: Optional[Mapping[str, str]] = None,
-        capture_output: Optional[bool] = None,  # ignored; always captured
-        text: Optional[bool] = None,  # ignored; always text
-        timeout: Optional[float] = None,
-    ) -> str:
-        """
-        Back-compat wrapper for legacy toolbox 'run_bash'.
-        Executes under bash, enforces safe-mode, always captures text output.
-        """
-        if (
-            command is None
-            or (isinstance(command, str) and not command.strip())
-            or (isinstance(command, list) and not command)
-        ):
-            return "⚠️ No command provided."
-
-        cmd_str = (
-            " ".join(shlex.quote(c) for c in command)
-            if isinstance(command, list)
-            else str(command)
-        )
-
-        try:
-            res = self.run_shell(
-                "bash",
-                cmd_str,
-                check=bool(check) if check is not None else False,
-                env=env,
-                timeout=timeout,
-            )
-        except PermissionError as e:
-            return f"🚫 Blocked: {e}"
-        except FileNotFoundError as e:
-            return f"🚫 Shell unavailable: {e}"
-        except Exception as e:
-            return f"🚫 Execution error: {e}"
-
-        note = []
-        if capture_output is False:
-            note.append("capture_output=false is ignored; output is always captured.")
-        if text is False:
-            note.append("text=false is ignored; output is always decoded to text.")
-        out = self.format_for_llm(res)
-        if note:
-            out += "\n" + "\n".join(f"_note: {n}_" for n in note) + "\n"
-        return out

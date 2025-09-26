@@ -3,6 +3,7 @@ from pathlib import Path
 from boris.engines.local import LocalEngine
 import pytest
 
+
 def test_local_engine_bootstrap(tmp_path: Path):
     # create a fake project with one file
     (tmp_path / "pkg").mkdir()
@@ -12,11 +13,12 @@ def test_local_engine_bootstrap(tmp_path: Path):
 
     # simulate one chat turn
     history = [{"role": "user", "content": "summarize project"}]
-    out = engine.chat(history=history, user="tester")
+    out = engine.chat_local_engine(history=history, user="tester")
 
     assert "answer" in out
     assert "project" in out
     assert isinstance(out["project"], dict)
+
 
 def test_file_shipment_validations(tmp_path: Path):
     """
@@ -32,7 +34,7 @@ def test_file_shipment_validations(tmp_path: Path):
 
     # Simulate a code generation request
     history = [{"role": "user", "content": "generate a function to greet"}]
-    out = engine.chat(history=history, user="tester")
+    out = engine.chat_local_engine(history=history, user="tester")
 
     # Check if the output contains the expected answer
     assert "answer" in out
@@ -46,5 +48,6 @@ def test_file_shipment_validations(tmp_path: Path):
     # Optionally, check the content of the generated file
     generated_file_path = tmp_path / "src" / "main.py"
     assert generated_file_path.exists()
-    assert generated_file_path.read_text() == "print('Hello, World!')\n"  # Adjust based on expected output
-
+    assert (
+        generated_file_path.read_text() == "print('Hello, World!')\n"
+    )  # Adjust based on expected output

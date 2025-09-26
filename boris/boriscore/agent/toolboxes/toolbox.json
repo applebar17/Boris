@@ -118,13 +118,13 @@
             "type": ["string", "null"],
             "description": "Identifier of the new parent folder (omit to keep the same parent)."
           },
-          "updated_file": {
-            "type": ["string", "null"],
-            "description": "The updated code of the whole file to be executed in the programming language specified. You should rewrite the WHOLE file, including patched and old code."
-          },
           "new_id": {
             "type": ["string", "null"],
             "description": "Updated id. Omit to keep the same id."
+          },
+          "updated_file": {
+            "type": ["string", "null"],
+            "description": "The updated code of the whole file to be executed in the programming language specified. You should rewrite the WHOLE file, including patched and old code."
           }
         },
         "required": [
@@ -135,8 +135,8 @@
           "language",
           "commit_message",
           "new_parent_id",
-          "updated_file",
-          "new_id"
+          "new_id",
+          "updated_file"
         ],
         "additionalProperties": false
       }

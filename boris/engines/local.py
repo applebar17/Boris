@@ -180,7 +180,7 @@ class LocalEngine:
             parallel_tool_calls=False,
         )
         answer_obj: OpenaiApiCallReturnModel = self.cw.call_openai(
-            params=params, tools_mapping=chatbot_tools_mapping
+            params=params, tools_mapping=chatbot_tools_mapping, init_tool_counter=True
         )
 
         # Optionally: persist changes to disk (out of scope for now).

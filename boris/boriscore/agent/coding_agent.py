@@ -331,7 +331,7 @@ class CodeWriter(CodeProject):
             user=user,
         )
         out: OpenaiApiCallReturnModel = self.call_openai(
-            params=params, tools_mapping=None
+            params=params, tools_mapping=None, init_tool_counter=True
         )
         return out.message_content
 
@@ -389,7 +389,9 @@ class CodeWriter(CodeProject):
         }
 
         # Call the LLM; allow it to iteratively retrieve
-        result = self.call_openai(params=params, tools_mapping=tools_mapping)
+        result = self.call_openai(
+            params=params, tools_mapping=tools_mapping, init_tool_counter=True
+        )
 
         parsed: ActionPlanningOutput
         if isinstance(result.message_content, dict):
@@ -441,6 +443,7 @@ class CodeWriter(CodeProject):
                         self.retrieve_node, return_content=True, to_emit=True
                     )
                 },
+                init_tool_counter=True,
             )
 
             # Some clients return parsed obj when response_format is used; else it's a JSON string.
@@ -518,6 +521,7 @@ class CodeWriter(CodeProject):
             output: OpenaiApiCallReturnModel = self.call_openai(
                 params=params,
                 tools_mapping=self.code_writer_tools_mapping,
+                init_tool_counter=True,
             )
             output_messages.append(output.message_content)
 
@@ -621,8 +625,7 @@ class CodeWriter(CodeProject):
             )
             self._log(f"Entering Coder flow for user: {user}")
             output: OpenaiApiCallReturnModel = self.call_openai(
-                params=params,
-                tools_mapping=filtered_mapping,
+                params=params, tools_mapping=filtered_mapping, init_tool_counter=True
             )
             output_messages.append(output.message_content)
 

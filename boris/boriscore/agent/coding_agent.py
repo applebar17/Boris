@@ -480,6 +480,7 @@ class CodeWriter(CodeProject):
         output_messages: List[str] = []
 
         for action in reasoning_output.actions:
+            self._emit(event="performing process", path=action.intent)
             # 1) Get a focused coding plan for this action (planner may retrieve files)
             action_plan: ActionPlanningOutput = self.action_planner(
                 action=action, user=user

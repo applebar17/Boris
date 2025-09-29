@@ -41,7 +41,7 @@ EVENT_ICONS = {
     "created dir": "📁➕",
     "dir exists": "📁",
     "created file": "📄➕",
-    "updated file": "✏️",
+    "updated file": "✏️ ",
     "touched file": "📄",
     "skipped file": "⏭",
     "deleted file": "🗑️📄",
@@ -51,6 +51,7 @@ EVENT_ICONS = {
     "reading file": "📖",
     "reasoning...": "🧠",
     "executing command": "⏭",
+    "performing process": "📦",
     # High-level (in‑memory) events if you emit them later:
     "created node": "🌱",
     "updated node": "🔧",
@@ -89,6 +90,7 @@ EVENT_STYLES = {
     "user touched file": "white",
     "user moved": "white",
     "user deleted dir": "white",
+    "performing process": "green",
 }
 
 Pathish = Union[str, Path]

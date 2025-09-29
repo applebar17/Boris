@@ -370,7 +370,7 @@ Rules:
 - If follow-ups or caveats appear in the outputs, include a short "Next steps" section.
 
 You're exposing the result of an Agentic AI process, where the final consumer, the chatbot interfacing, is in a dynamic state, where he can call different tools for starting processes.
-In the current state, you should be the clearest as possible for eventual suggestions / next steps et similar: the AI might misunderstand your suggestions as a new job / task, but that could be an hallucination.
+In the current state, you should be the clearest as possible for eventual suggestions / next steps et similar by explicitly writing to report to the user eventual next steps as suggestions: the AI might misunderstand your suggestions as a new job / task, but that could be an hallucination.
 
 You must be very clear in summarizing what has been done during the previous processes and dictate the chatbot to always report to the user what's has been done. Do not report mis-understandable outputs which may lead the chatbot to involve other tools / agent. 
 You're a reporter: be explicit in not invoking any further tool or process.
@@ -539,6 +539,7 @@ Guidelines for generation
 4. Write thorough inline docstrings and type annotations where appropriate.
 5. Ensure determinism: identical inputs always yield identical outputs.
 6. When outputting runtime files content (TOML/INI/JSON/YAML/etc.), emit content-only in the target syntax—no Markdown fences, no YAML front-matter (---/...).
+7. Absolutely MANDATORY: when updating a file, to generate again the full code / content of the file. The content will over-write the previous content so it is mandatory to generate both the old code plus the patches for the update.
 
 • Retrieve additional files for context awareness only when esplicitly asked for.
 • You retrieve files by calling **retrieve_code(<file_id>)**, where `<file_id>` is any identifier present in the project structure above.  

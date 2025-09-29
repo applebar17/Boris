@@ -1,6 +1,6 @@
 # 🤖 Boris — Chat With Your Codebase (Editor-agnostic, Local-first)
 
-**Boris** is a **terminal AI assistant for developers**. It **scans your repo** into an in-memory tree, lets you **chat** about files and structure, and can **run safe shell** checks. It works with **OpenAI** and **Azure OpenAI** today, with a roadmap for **Anthropic Claude** and **Google Gemini**.
+**Boris** is a **terminal AI assistant for developers**. It **studies your repo** and lets you **chat** about files and structure. This allows the user to delegate many development tasks to Boris itself: Boris is capable of refactoring and reviewing code, creating new features, and helping the user analyze the project, and it does everything fully aware of the project context. It works with **OpenAI** and **Azure OpenAI** today, with a roadmap for **Anthropic Claude** and **Google Gemini**.
 
 > Looking for a **Cursor / GitHub Copilot / Windsurf / Claude Code**-style assistant but **editor-agnostic** and **local-first**? Boris is a lightweight, repository-aware alternative you drive from the CLI—with explicit config, repeatable runs, and safety rails.
 
@@ -8,7 +8,7 @@
 
 ## ✨ Highlights
 
-* 🛠 **Local-first** — scans your repo into memory, never writes unless you ask.
+* 🛠 **Local-first** — scans your repo into memory, never writes unless asked.
 * 🔒 **Safe** — a **safe-mode shell** blocks risky commands.
 * ⚡ **Incremental** — **snapshots** cache structure so subsequent runs are fast.
 * 🧭 **Repo-aware chat** — talk about files, folders, diffs, and apply patches.
@@ -35,7 +35,7 @@ Boris is on **PyPI** as **`boris-cli`**.
 
 ```bash
 # Pin to the released version
-pip install boris-cli==0.1.0
+pip install boris-cli==0.1.1
 
 # …or just get the latest
 pip install -U boris-cli
@@ -62,26 +62,27 @@ boris --version
 ## 🚀 Quick Start
 
 ```bash
-# 1) Initialize config
-boris ai init            # project-local .env
+# 1) Initialize configurations
+boris ai init            # creates/modifies project-local .env
 # or
-boris ai init --global   # ~/.config/boris/.env
+boris ai init --global   # ~/.config/boris/.env -> globally, not project-wise
 
 # 2) Choose a provider
-boris ai use-openai --api-key sk-... --chat gpt-4o-mini --reasoning o3-mini
+boris ai use-openai --api-key sk-... --chat gpt-4o-mini --reasoning o3-mini --chat gpt-4o-mini
 # or Azure OpenAI (use your deployment names)
-boris ai use-azure --endpoint https://<resource>.openai.azure.com/ --api-key ... --chat my-gpt4o-mini
+boris ai use-azure --endpoint https://<resource>.openai.azure.com/ --api-key ... --chat my-gpt4o-mini --reasoning ...
 
 # 3) Verify
-boris ai show
-boris ai test
+boris ai show # Shows current status of config
+boris ai test # Tests all necessary configurations have been provided
 
 # 4) Chat in any repo
+# Boris is context aware: he will study and "know" about anything important under the current root
 cd /path/to/your/repo
 boris chat
 ```
 
-When a chat starts, Boris **“studies” your project** and shows a concise scan summary. The first study can be slower; subsequent runs are faster thanks to snapshots.
+When a chat starts, Boris **“studies” your project** and shows a concise scan summary. The first study can be slower; subsequent runs are faster thanks to locally saved snapshots. Every time Boris starts a chat, it synchronizes with the current project.
 
 ---
 
@@ -100,7 +101,7 @@ Boris reads from:
 CLI convenience:
 
 ```bash
-boris ai use-openai --api-key sk-... --chat gpt-4o-mini --reasoning o3-mini
+boris ai use-openai --api-key sk-... --chat gpt-4o-mini --reasoning o3-mini --chat ...
 ```
 
 Env-style:
@@ -125,7 +126,7 @@ BORIS_MODEL_EMBEDDING=text-embedding-3-small
 
 #### Azure OpenAI
 
-Azure uses **deployment names** (not raw model IDs) and typically requires an **API version**.
+Azure uses **deployment names** (not raw model IDs) and typically requires an **API version** (>2025-04-01).
 
 CLI convenience:
 
@@ -212,7 +213,7 @@ boris [COMMAND]
 4. **Bootstrap project tree**
 
    * Load prior **snapshot** (if any).
-   * **Sync with disk** (read-only): add new/changed files, read code, respect `.cmignore`/`.gitignore` (`.venv/`, `node_modules/`, etc.).
+   * **Sync with disk** (read-only): studies new/changed files, understands code, respects `.cmignore`/`.gitignore` (`.venv/`, `node_modules/`, etc.).
    * Save fresh **snapshot** for next run.
 5. **Start chat**
 
@@ -220,15 +221,18 @@ boris [COMMAND]
 
 ---
 
-## 🛡️ Safety & Logging
+## 🏎️ Performance
 
-* **Safe-mode shell** blocks destructive patterns (e.g., `rm -rf`, wild redirections, broad `chmod`).
-* **No implicit writes** — disk writes are **opt-in**; imports never modify your repo.
-* **Logs**: rotating file under your per-user logs directory; console tap optional.
+### Usage
 
----
+* Boris on the first initialization at a certain path will take longer than usual to study the whole project (AI-enhanced) and save a current snapshot.
+  * Next initializations will take less time: Boris will only sync differences
 
-## 🏎️ Performance tips
+* Boris Provides the underlying AI structure and logic, but the AI capabilities lie in the models provided for each single task, the most important being reasoning and coding.
+
+* Boris is an Agent, which means that it will perform different tasks in the background to ensure high-quality output: context-windows become relevant. Boris manages context length, but choosing high-context models for coding tasks could be the best option, to allow the model to improve the number of iterations.
+
+### Optimization
 
 * Use/extend ignore rules:
 
@@ -243,13 +247,7 @@ boris [COMMAND]
 
 * **Today:** OpenAI, Azure OpenAI
 * **Planned:** **Anthropic Claude** (Claude / Claude Code), **Google Gemini**
-* Compatible backends via `BORIS_OPENAI_BASE_URL` are possible (OpenAI-compatible APIs)
-
----
-
-## 🧪 Repository Study Note
-
-When Boris starts, he always studies the repository. Therefore, the first initialization analyzes the entire repository which may take more time. On subsequent starts, it syncs with the current project and studies only the new changes relative to the previous state.
+* Compatible backends via `BORIS_OPENAI_BASE_URL` are possible (OpenAI-compatible APIs - ensure api-versions match)
 
 ---
 
@@ -265,31 +263,7 @@ See [LICENSE](./LICENSE) for details.
 
 ---
 
-## ❓ Troubleshooting
-
-**“command not found: boris” after install**
-
-* Ensure your Python scripts path is on `PATH` (e.g., `~/.local/bin` on Linux, `%APPDATA%\Python\Scripts` on Windows, the venv’s `bin/` on macOS/Linux).
-* Try reinstalling inside a virtualenv: `python -m venv .venv && source .venv/bin/activate && pip install -U boris-cli`.
-
-**Azure: 401/404 or “model not found”**
-
-* Use **deployment names** (`BORIS_MODEL_*`), not raw model IDs.
-* Check `BORIS_AZURE_OPENAI_ENDPOINT` and pin `BORIS_AZURE_OPENAI_API_VERSION`.
-* Verify the deployment exists and is **enabled** in the Azure portal.
-
-**Scan is slow on first run**
-
-* Confirm `.cmignore`/`.gitignore` ignores heavy dirs (`.venv`, `node_modules`, `dist`, `build`).
-* Set `BORIS_IMPORT_ENRICH=0` and re-run.
-
-**No output / tool calls look stuck**
-
-* Run `boris ai test`.
-* Check `boris logs_path` and open the log file for details.
-* Open an **Issue**—we’ll jump on it.
+**PyPI page:** [https://pypi.org/project/boris-cli/0.1.1/](https://pypi.org/project/boris-cli/0.1.1/)  
+**Install:** `pip install boris-cli==0.1.1`  
 
 ---
-
-**PyPI page:** [https://pypi.org/project/boris-cli/0.1.0/](https://pypi.org/project/boris-cli/0.1.0/)
-**Install:** `pip install boris-cli==0.1.0`

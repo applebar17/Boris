@@ -292,7 +292,7 @@ class CodeWriter(CodeProject):
             target_path=action.target_path,
             retrieve_bullets=retrieve_bullets,
             edit_bullets=edit_bullets,
-            expected_outcome_block=expected_outcome_block,
+            # expected_outcome_block=expected_outcome_block,
         )
 
     # -------------------- summarization --------------------
@@ -467,83 +467,6 @@ class CodeWriter(CodeProject):
     @traceable
     def generate_files_chat(
         self,
-        chat_message: Union[str, list],
-        reasoning_output: ReasoningPlan,
-        user: Optional[str] = None,
-        write_to_disk: bool = False,
-    ) -> str:
-        """
-        Execute planned actions by prompting the coding agent with the project tree,
-        available tools, and per-action reasoning. Summarize outputs at the end.
-        """
-        output_messages: List[str] = []
-        original_request: str = ""
-
-        for action in reasoning_output.actions:
-            tree_structure = self.get_tree_structure(description=True)
-            reasoning_block = CodeWriter.format_action_reasoning(action=action)
-
-            # Normalize chat message for this step
-            if isinstance(chat_message, list):
-                # Append reasoning to the last user message
-                chat_message[-1][
-                    "content"
-                ] += f"\nHere's the reasoning about the request above:\n{reasoning_block}"
-                chat_messages = chat_message
-                original_request = chat_message[-1]["content"]
-            elif isinstance(chat_message, str):
-                chat_messages = AGENT_CHAT_MESSAGE.format(
-                    reasoning=reasoning_block, chat_message=chat_message
-                )
-                original_request = chat_messages
-            else:
-                raise ValueError("Unrecognized chat history/message structure.")
-
-            # Refresh mapping if using AI-assisted tools (it embeds the original_request)
-            self.update_tool_mapping(original_request=original_request)
-
-            tools_to_send, _selected_names = self._select_tools_to_send()
-
-            params = self.handle_params(
-                system_prompt=AGENT_SYSTEM_PROMPT.format(
-                    tree_structure=tree_structure,
-                    available_tools=self.build_tool_blurb(),
-                ),
-                chat_messages=chat_messages,
-                temperature=0.05,
-                model=self.llm_model,
-                tools=tools_to_send,
-                parallel_tool_calls=False,
-                user=user,
-            )
-
-            self._log(f"Entering Agent Flow for user: {user}")
-            output: OpenaiApiCallReturnModel = self.call_openai(
-                params=params,
-                tools_mapping=self.code_writer_tools_mapping,
-                init_tool_counter=True,
-            )
-            output_messages.append(output.message_content)
-
-            if write_to_disk:
-                self.write_to_disk(dst=self.base_path)
-
-        if len(output_messages) > 1:
-            summary = self.summarize_action_outputs(
-                original_request=original_request,
-                reasoning_output=reasoning_output,
-                output_messages=output_messages,
-                user=user,
-            )
-            self._log("Returning final summary of the actions to the chatbot.")
-            return summary
-
-        else:
-            return output_messages[0]
-
-    @traceable
-    def generate_files_chat_v2(
-        self,
         reasoning_output: ReasoningPlan,
         user: Optional[str] = None,
         write_to_disk: bool = True,
@@ -555,9 +478,6 @@ class CodeWriter(CodeProject):
         3) Collect per-action outputs and return a single, concise summary.
         """
         output_messages: List[str] = []
-        original_request: str = (
-            ""  # we’ll update this each loop; final one will be summarized
-        )
 
         for action in reasoning_output.actions:
             # 1) Get a focused coding plan for this action (planner may retrieve files)
@@ -578,10 +498,9 @@ class CodeWriter(CodeProject):
             chat_messages = [
                 ChatCompletionUserMessageParam(content=planning_action, role="user")
             ]
-            original_request = chat_messages  # keep for final summary + mapping context
 
             # 3) Refresh mapping (inject the latest original_request for AI-assisted tools if enabled)
-            self.update_tool_mapping(original_request=original_request)
+            self.update_tool_mapping(original_request=chat_messages)
 
             # 4) Select exactly the tools allowed for this operation (NO retriever here)
             tools_to_send, selected_names, filtered_mapping = (
@@ -635,7 +554,7 @@ class CodeWriter(CodeProject):
 
         # 8) Summarize all actions’ outputs
         summary = self.summarize_action_outputs(
-            original_request=original_request,
+            original_request=action_plan.detailed_coding_plan,
             reasoning_output=reasoning_output,
             output_messages=output_messages,
             user=user,
@@ -657,4 +576,4 @@ class CodeWriter(CodeProject):
         #     reasoning_output=plan, chat_message=chat_history, user=user
         # )
 
-        return self.generate_files_chat_v2(reasoning_output=plan, user=user)
+        return self.generate_files_chat(reasoning_output=plan, user=user)

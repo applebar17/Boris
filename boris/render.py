@@ -55,6 +55,14 @@ EVENT_ICONS = {
     "created node": "🌱",
     "updated node": "🔧",
     "deleted node": "🗑️",
+    # User updates at runtime
+    "user created dir": "📁➕",
+    "user created file": "📄➕",
+    "user deleted file": "🗑️📄",
+    "user updated file": "✏️",
+    "user touched file": "📄",
+    "user moved": "📦",
+    "user deleted dir": "🗑️📁",
 }
 
 EVENT_STYLES = {
@@ -74,6 +82,13 @@ EVENT_STYLES = {
     "reading file": "blue",
     "reasoning...": "magenta",
     "executing command": "blue",
+    "user created dir": "white",
+    "user created file": "white",
+    "user deleted file": "white",
+    "user updated file": "white",
+    "user touched file": "white",
+    "user moved": "white",
+    "user deleted dir": "white",
 }
 
 Pathish = Union[str, Path]

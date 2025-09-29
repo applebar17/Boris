@@ -1165,7 +1165,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
                         parent, part, is_file=False
                     ) or self.retrieve_node(node_id=node_id, dump=False)
                     created_dirs += 1
-                    self._emit("created node", walk_path)
+                    self._emit("user created node", walk_path)
                 parent = existing
 
             # files in this folder
@@ -1222,7 +1222,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
                         create_node_on_disk=False,  # NEVER write during sync
                     )
                     created_files += 1
-                    self._emit("created node", file_path)
+                    self._emit("user created node", file_path)
                 else:
                     # EXISTING file → refresh code content if changed
                     if read_code:
@@ -1235,7 +1235,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
                         if node.code != new_content:
                             node.code = new_content
                             updated_files += 1
-                            self._emit("updated node", file_path)
+                            self._emit("user updated node", file_path)
 
         # Handle removed files/folders (model-only deletion)
         if remove_missing:
@@ -1303,7 +1303,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
                         dst=None,
                         dry_run=True,
                     )
-                    self._emit("deleted node", src_resolved / relp)
+                    self._emit("user deleted node", src_resolved / relp)
                     if node.is_file:
                         deleted_files += 1
                     else:

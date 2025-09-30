@@ -297,7 +297,6 @@ class CodeWriter(CodeProject):
 
     # -------------------- summarization --------------------
 
-    @traceable
     def summarize_action_outputs(
         self,
         *,

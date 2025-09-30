@@ -63,7 +63,7 @@
     "type": "function",
     "function": {
       "name": "run_terminal_commands",
-      "description": "Run a single or multiple command in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode.",
+      "description": "Run a single or multiple terminal commands in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode. You will be running these commands from the root of the project: be careful in navigating the directories beforehand.",
       "strict": true,
       "parameters": {
         "type": "object",

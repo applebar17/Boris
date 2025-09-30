@@ -1,7 +1,14 @@
 from __future__ import annotations
+
+import os
 import mimetypes
 from pathlib import Path
 from typing import Optional
+from ulid import ulid  # or uuid4
+
+
+def _generate_stable_id() -> str:
+    return str(ulid())
 
 
 def _safe_truncate(text: str, limit: int = 15_000) -> str:
@@ -87,3 +94,73 @@ def _detect_language(file_path: Path, text: Optional[str]) -> str:
         return "json"
 
     return "unknown"
+
+
+# --- Import from disk ---
+
+
+# perf/robustness guards
+MAX_FILE_BYTES = int(os.getenv("BORIS_MAX_READ_BYTES", "1048576"))  # 1 MiB default
+BINARY_SNIFF = 4096
+
+
+def _is_binary(p: Path) -> bool:
+    try:
+        with p.open("rb") as fh:
+            chunk = fh.read(BINARY_SNIFF)
+        return b"\x00" in chunk  # simple, cheap heuristic
+    except Exception:
+        return True  # treat unreadable as binary
+
+
+def _should_read(p: Path, read_code: bool = True) -> bool:
+    if not read_code:
+        return False
+    try:
+        if p.stat().st_size > MAX_FILE_BYTES:
+            return False
+    except Exception:
+        return False
+    return not _is_binary(p)
+
+
+CODE_EXTS = {
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".cs",
+    ".rb",
+    ".php",
+    ".sh",
+    ".ps1",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".md",
+    ".txt",
+    # ".ipynb",
+}
+
+
+def _should_enrich(
+    p: Path, content: Optional[str], ai_enrichment_metadata_pipe: bool = True
+) -> bool:
+    if not ai_enrichment_metadata_pipe:
+        return False
+    # Only enrich plausible source/config/docs
+    return p.suffix.lower() in CODE_EXTS
+
+
+# ------------------------

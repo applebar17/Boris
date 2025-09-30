@@ -4,7 +4,6 @@ import logging
 from typing import Optional
 from functools import partial
 from langsmith import traceable
-
 from boris.boriscore.utils.utils import log_msg, load_toolbox
 from boris.boriscore.code_structurer.code_manager import CodeProject
 from boris.boriscore.agent.coding_agent import CodeWriter

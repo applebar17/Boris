@@ -10,7 +10,6 @@ from openai.types.chat.chat_completion_message_param import (
     ChatCompletionUserMessageParam,
 )
 from langsmith import traceable
-
 from boris.boriscore.code_structurer.code_manager import CodeProject
 from boris.boriscore.agent.prompts import (
     REASONING,

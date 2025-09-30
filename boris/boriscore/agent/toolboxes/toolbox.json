@@ -23,18 +23,14 @@
     "type": "function",
     "function": {
       "name": "create_node",
-      "description": "Create a new folder or file in the project tree. If the tree is empty this call can also create the root (use code \"ROOT\"). Placement among siblings is controlled by *position*; omitting it appends to the end of the parent’s children list. Every *code* must be unique. If you create an empty file, mention that in the description. You CAN'T use as parent_id a file, only a folder.",
+      "description": "Create a new folder or file in the project tree. If the tree is empty this call can also create the root (use code \"ROOT\"). Placement among siblings is controlled by *position*; omitting it appends to the end of the parent’s children list. Every combination of *parent_id* and *name* must be unique. If you create an empty file, mention that in the description. You CAN'T use as parent_id a file, only a folder.",
       "strict": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "node_id": {
-            "type": ["string", "null"],
-            "description": "Unique identifier for the node. Must not duplicate any existing codes."
-          },
           "parent_id": {
             "type": ["string", "null"],
-            "description": "Identifier of the parent folder. Use \"ROOT\" to attach to (or create) the root."
+            "description": "Identifier of the parent folder (containig the new node). Use \"ROOT\" to attach to (or create) the root."
           },
           "name": {
             "type": ["string", "null"],
@@ -68,7 +64,6 @@
         "required": [
           "name",
           "is_file",
-          "node_id",
           "parent_id",
           "description",
           "scope",
@@ -94,9 +89,9 @@
             "type": ["string", "null"],
             "description": "Identifier of the node to modify."
           },
-          "name": {
+          "new_name": {
             "type": ["string", "null"],
-            "description": "New file or folder name (omit to keep the same)."
+            "description": "New file name (omit to keep the same)."
           },
           "description": {
             "type": ["string", "null"],
@@ -118,10 +113,6 @@
             "type": ["string", "null"],
             "description": "Identifier of the new parent folder (omit to keep the same parent)."
           },
-          "new_id": {
-            "type": ["string", "null"],
-            "description": "Updated id. Omit to keep the same id."
-          },
           "updated_file": {
             "type": ["string", "null"],
             "description": "The updated code of the whole file to be executed in the programming language specified. You should rewrite the WHOLE file, including patched and old code."
@@ -135,7 +126,6 @@
           "language",
           "commit_message",
           "new_parent_id",
-          "new_id",
           "updated_file"
         ],
         "additionalProperties": false

@@ -9,9 +9,13 @@ from functools import partial
 from pathlib import Path
 from typing import List, Optional, Union, Callable
 from langsmith import traceable
-
 from boris.boriscore.utils.utils import log_msg, handle_path, load_toolbox
-from boris.boriscore.code_structurer.utils import _safe_truncate, _detect_language
+from boris.boriscore.code_structurer.utils import (
+    _safe_truncate,
+    _detect_language,
+    _should_enrich,
+    _should_read,
+)
 from boris.boriscore.code_structurer.code_nodes import ProjectNode
 from boris.boriscore.terminal.terminal_interface import TerminalExecutor
 from boris.boriscore.ai_clients.ai_clients import ClientOAI, OpenaiApiCallReturnModel
@@ -102,6 +106,20 @@ class CodeProject(ClientOAI, TerminalExecutor):
                 self.retrieve_node, return_content=return_content, to_emit=True
             ),
         }
+
+    def _assert_unique_sibling_name(self, parent: ProjectNode, name: str) -> None:
+        for child in parent.children:
+            if child.name == name:
+                raise ValueError(
+                    f"A file (node) named '{name}' already exists under parent path '{parent.relative_path}'."
+                )
+
+    def _assert_parent_is_folder(self, parent: ProjectNode) -> None:
+        if parent.is_file:
+            raise ValueError(
+                "Cannot create a node under a file. Parent must be a folder.\n"
+                f"[{parent.id}] at {parent.relative_path} is a file, not a folder"
+            )
 
     def _assert_unique(self, id: Optional[str]):
         if id and id in self.ids:
@@ -213,7 +231,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
                     raise ValueError(
                         f"Duplicate name '{name}' under folder "
                         f"[{parent.id}] {parent.name}. Names must be unique. "
-                        f"(Did you intended to update file '{name}'?). "
+                        f"(Did you intended to update file '{ch.relative_path}'?). "
                     )
 
     def _root_dst(self, dst: Optional[Path]) -> Path:
@@ -275,13 +293,13 @@ class CodeProject(ClientOAI, TerminalExecutor):
     def create_node(
         self,
         name: str,
+        parent_id: str,
         *,
         is_file: bool = False,
         description: str = "",
         scope: str = "",
         language: Optional[str] = None,
         commit_message: Optional[str] = None,
-        parent_id: str = "ROOT",
         node_id: Optional[str] = None,
         code: Optional[str] = None,
         create_node_on_disk: bool = True,
@@ -291,42 +309,31 @@ class CodeProject(ClientOAI, TerminalExecutor):
         on_event: Optional[Callable[[str, Path], None]] = None,
     ) -> ProjectNode | str:
 
-        self._assert_unique(node_id)
+        parent: ProjectNode = self.retrieve_node(parent_id, dump=False)  # type: ignore[arg-type]
+        parent = self._resolve_folder_parent(parent)
 
-        # Root creation (rare): only allowed when no parent_id and either node_id is "root" or project has no root yet
-        if not parent_id:
-            if (node_id and node_id.lower() == "root") or not self.root:
-                new_node = ProjectNode(
-                    name,
-                    is_file=is_file,
-                    description=description,
-                    scope=scope,
-                    language=language,
-                    commit_message=commit_message,
-                    id=node_id,
-                    code=code,
-                )
-                parent = None  # root has no parent
-            else:
-                return "You must return a valid parent_id! The only node not allowed to miss parent_id is the Root node."
+        self._assert_parent_is_folder(parent)
+        self._assert_unique_sibling_name(parent, name)
+
+        if node_id:
+            self._assert_unique(node_id)
         else:
-            parent: ProjectNode = self.retrieve_node(parent_id, dump=False)  # type: ignore[arg-type]
-            parent = self._resolve_folder_parent(parent)
+            node_id = self._generate_node_id(parent=parent, filename=name)
 
-            # block duplicate names inside the parent
-            self._assert_unique_child_name(parent, name)
+        # block duplicate names inside the parent
+        self._assert_unique_child_name(parent, name)
 
-            new_node = ProjectNode(
-                name,
-                is_file=is_file,
-                description=description,
-                scope=scope,
-                language=language,
-                commit_message=commit_message,
-                id=node_id,
-                code=code,
-            )
-            parent.add_child(new_node)
+        new_node = ProjectNode(
+            name,
+            is_file=is_file,
+            description=description,
+            scope=scope,
+            language=language,
+            commit_message=commit_message,
+            id=node_id,
+            code=code,
+        )
+        parent.add_child(new_node)
 
         self._register(new_node.id)
 
@@ -370,24 +377,21 @@ class CodeProject(ClientOAI, TerminalExecutor):
             raise ValueError(
                 f"Node '{node_id}' not found. "
                 f"Retievable ids: {', '.join(self.ids)}\n"
-                # f"from current structure:\n{self.get_tree_structure()}"
             )
-        if to_emit:
-            if getattr(node, "is_file", False):
-                try:
-                    p = self.path_for(node, root_dst=self.base_path)
-                except Exception:
-                    p = Path(node.name)
-                # uses CodeProject._emit → will go to CLI sink if present
-                self._emit("reading file", p)
 
         if return_content and node.is_file:
+
+            if to_emit:
+                self._emit("reading file", node.relative_path)
+
             return (
-                f"Name: {node.name}\n"
-                f"Description: {node.description}\n"
-                f"Code in coding language [{node.language}]:\n\n---"
+                f"Node {node.id}\n"
+                f"named {node.name}\n"
+                f"located at {node.relative_path}\n"
+                f"with description: {node.description}\n"
+                f"Coded in [{node.language}]:\n\nCODE START---"
                 f"{node.code}"
-                "\n\n---"
+                "\n\nCODE END---"
                 # f"Now, you cannot fetch anymore information from node {node.id}."
             )
 
@@ -397,20 +401,20 @@ class CodeProject(ClientOAI, TerminalExecutor):
         self,
         node_id: str,
         *,
-        name: Optional[str] = None,
+        new_name: Optional[str] = None,
         description: Optional[str] = None,
         scope: Optional[str] = None,
         language: Optional[str] = None,
         commit_message: Optional[str] = None,
         updated_file: Optional[str] = None,
         new_parent_id: Optional[str] = None,
-        new_id: Optional[str] = None,
         update_node_on_disk: bool = True,
         # NEW: pass-through FS knobs to keep parity with write_to_disk
         dst: Optional[Path] = None,
         dry_run: bool = False,
         on_event: Optional[Callable[[str, Path], None]] = None,
     ) -> str:
+
         node: ProjectNode = self.retrieve_node(node_id, dump=False)  # type: ignore[arg-type]
         if self.root is None:
             raise ValueError("Project tree empty – nothing to update.")
@@ -420,12 +424,24 @@ class CodeProject(ClientOAI, TerminalExecutor):
             root_dst.mkdir(parents=True, exist_ok=True)
             self._emit("created dir", root_dst, on_event)
 
+        if new_parent_id:
+            parent = self.retrieve_node(new_parent_id, dump=False)
+        else:
+            parent = self.retrieve_node(parent=node.parent, dump=False)
+
+        name = new_name if new_name else node.name
         # --- ID change bookkeeping (unchanged from yours) ---
         new_id_message = None
-        if new_id:
+        if new_parent_id or name:
+            self._assert_parent_is_folder(parent)
+            self._assert_unique_sibling_name(parent, name)
+
+            new_id = self._generate_node_id(parent=parent, filename=name)
+
             self._deregister({node.id})
             self._assert_unique(new_id)
             self._register(new_id)
+
             new_id_message = f"with new id: [{new_id}] "
 
         # --- capture old on-disk path BEFORE mutation ---
@@ -691,10 +707,10 @@ class CodeProject(ClientOAI, TerminalExecutor):
         marker = "FILE" if node.is_file else "DIR"
         marker = ""
         if description:
-            line = f"{prefix}{connector}{marker} [{node.id}] @ {node.relative_path}: {node.description}\n"
+            line = f"{prefix}{connector}{marker} [{node.id}]: {node.description}\n"
 
         else:
-            line = f"{prefix}{connector}{marker} [{node.id}] @ {node.relative_path}\n"
+            line = f"{prefix}{connector}{marker} [{node.id}]\n"
         new_prefix = f"{prefix}{'    ' if is_last else '│   '}"
         for idx, ch in enumerate(node.children):
             line += self._render_tree(
@@ -908,11 +924,16 @@ class CodeProject(ClientOAI, TerminalExecutor):
         read_code: bool = True,
         overwrite: bool = False,
         ai_enrichment_metadata_pipe: bool = True,
+        dry_run: bool = False,
     ) -> list[str]:
         """
         Scan *src* (defaults to self.base_path) and replicate every file/folder
         into the current CodeProject tree (in-memory only).
         """
+
+        def _onerror(err):
+            self._log(f"os.walk error on {getattr(err, 'filename', '?')}: {err}")
+
         if self.root is None:
             raise ValueError("Project has no ROOT – initialise CodeProject first.")
 
@@ -927,68 +948,6 @@ class CodeProject(ClientOAI, TerminalExecutor):
 
         created: list[str] = []
         path_to_node: dict[Path, ProjectNode] = {src: self.root}
-
-        # perf/robustness guards
-        MAX_FILE_BYTES = int(
-            os.getenv("BORIS_MAX_READ_BYTES", "1048576")
-        )  # 1 MiB default
-        BINARY_SNIFF = 4096
-
-        def _is_binary(p: Path) -> bool:
-            try:
-                with p.open("rb") as fh:
-                    chunk = fh.read(BINARY_SNIFF)
-                return b"\x00" in chunk  # simple, cheap heuristic
-            except Exception:
-                return True  # treat unreadable as binary
-
-        def _should_read(p: Path) -> bool:
-            if not read_code:
-                return False
-            try:
-                if p.stat().st_size > MAX_FILE_BYTES:
-                    return False
-            except Exception:
-                return False
-            return not _is_binary(p)
-
-        CODE_EXTS = {
-            ".py",
-            ".ts",
-            ".tsx",
-            ".js",
-            ".jsx",
-            ".mjs",
-            ".go",
-            ".rs",
-            ".java",
-            ".kt",
-            ".c",
-            ".cpp",
-            ".h",
-            ".hpp",
-            ".cs",
-            ".rb",
-            ".php",
-            ".sh",
-            ".ps1",
-            ".toml",
-            ".yaml",
-            ".yml",
-            ".json",
-            ".md",
-            ".txt",
-            # ".ipynb",
-        }
-
-        def _should_enrich(p: Path, content: Optional[str]) -> bool:
-            if not ai_enrichment_metadata_pipe:
-                return False
-            # Only enrich plausible source/config/docs
-            return p.suffix.lower() in CODE_EXTS
-
-        def _onerror(err):
-            self._log(f"os.walk error on {getattr(err, 'filename', '?')}: {err}")
 
         for root_path, dirs, files in os.walk(
             src, topdown=True, followlinks=False, onerror=_onerror
@@ -1015,15 +974,15 @@ class CodeProject(ClientOAI, TerminalExecutor):
             for d in dirs:
                 folder_path = current_parent / d
                 node_id = self._generate_node_id(parent=parent_node, filename=d)
+
                 self.create_node(
-                    d,
-                    is_file=False,
+                    name=d,
                     parent_id=parent_node.id,
+                    is_file=False,
                     description="",
                     scope="",
                     node_id=node_id,
-                    dry_run=True,
-                    create_node_on_disk=False,
+                    dry_run=dry_run,
                 )
                 node = self.retrieve_node(node_id=node_id, dump=False)
                 path_to_node[folder_path] = node
@@ -1036,7 +995,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
                 self._log(f"Importing node (file): {file_path} ...")
 
                 file_content: Optional[str] = None
-                if _should_read(file_path):
+                if _should_read(file_path, read_code=read_code):
                     try:
                         # Read once (bytes) then decode; avoids double I/O.
                         raw = file_path.read_bytes()
@@ -1044,7 +1003,11 @@ class CodeProject(ClientOAI, TerminalExecutor):
                     except Exception as e:
                         self._log(f"Read skipped ({e.__class__.__name__}): {file_path}")
 
-                if _should_enrich(file_path, file_content):
+                if _should_enrich(
+                    file_path,
+                    file_content,
+                    ai_enrichment_metadata_pipe=ai_enrichment_metadata_pipe,
+                ):
                     metadata = self._diskfile_add_description_metadata(
                         file_name=f, file_content=file_content or ""
                     )
@@ -1057,6 +1020,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
                     )
 
                 node_id = self._generate_node_id(parent=parent_node, filename=f)
+
                 self.create_node(
                     f,
                     is_file=True,
@@ -1066,8 +1030,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
                     scope=metadata.scope,
                     node_id=node_id,
                     code=file_content,
-                    dry_run=True,
-                    create_node_on_disk=False,
+                    dry_run=dry_run,
                 )
                 node = self.retrieve_node(node_id=node_id, dump=False)
                 created.append(node.id)
@@ -1081,7 +1044,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
         *,
         read_code: bool = True,
         ai_enrichment_metadata_pipe: bool = True,
-        remove_missing: bool = True,  # ← default to full sync
+        remove_missing: bool = True,
     ) -> dict:
         """
         Merge current disk contents into the existing in-memory project tree:
@@ -1146,13 +1109,9 @@ class CodeProject(ClientOAI, TerminalExecutor):
                 walk_path = walk_path / part
                 existing = self._child_by_name(parent, part, is_file=False)
                 if existing is None:
-                    node_id = (
-                        self._generate_node_id(parent=parent, filename=part)
-                        if parent.id
-                        else None
-                    )
+                    node_id = self._generate_node_id(parent=parent, filename=part)
                     self.create_node(
-                        part,
+                        name=part,
                         is_file=False,
                         parent_id=parent.id,
                         node_id=node_id,
@@ -1204,13 +1163,10 @@ class CodeProject(ClientOAI, TerminalExecutor):
                         description = ""
                         scope = "unknown"
 
-                    node_id = (
-                        self._generate_node_id(parent=parent, filename=fname)
-                        if parent.id
-                        else None
-                    )
+                    node_id = self._generate_node_id(parent=parent, filename=fname)
+
                     self.create_node(
-                        fname,
+                        name=fname,
                         is_file=True,
                         parent_id=parent.id,
                         node_id=node_id,

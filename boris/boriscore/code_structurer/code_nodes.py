@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from boris.boriscore.utils.utils import log_msg, handle_path
+from boris.boriscore.code_structurer.utils import _generate_stable_id
 
 
 class ProjectNode:
@@ -41,6 +42,7 @@ class ProjectNode:
         # ── hierarchy ──────────────────────────────────────────
         self.parent: Optional["ProjectNode"] = parent
         self.children: List["ProjectNode"] = []  # folders only
+        self.stable_id = _generate_stable_id()
 
     # -----------------------------------------------------------
     # Derived helpers
@@ -63,41 +65,53 @@ class ProjectNode:
 
         For the synthetic root node itself, this returns ".".
         """
-        return self.path(with_root=False)
+        return self.path(with_root=True)
 
     # ───────────────────────────── utilities ──────────────────────────────
-    def path(self, *, with_root: bool = False, sep: str = "/") -> str:
+    def path(self, *, with_root: bool = True, sep: str = "/") -> str:
         """
         Return the path of this node from the project root as a string.
 
         Parameters
         ----------
         with_root : bool
-            If False (default) the artificial root node (id == "ROOT")
-            is skipped in the resulting path.
+            If True, the returned path is explicitly rooted with a leading
+            "./" (or ".<sep>") when not at the synthetic root; the root
+            itself returns "./".
+            If False (default), the path is returned without a leading "./",
+            and the root returns ".".
         sep : str
             Path separator to use. Defaults to "/".
 
         Notes
         -----
-        • When `with_root` is False and the node **is** the root, returns ".".
+        • The synthetic root node (id == "ROOT") never appears by name.
         • This function is intended for string paths; use `pathlib_path` for Path.
 
-        Example
-        -------
-        >>> n.path()                # "src/utils/helpers.py"
-        >>> n.path(with_root=True)  # "project_root/src/utils/helpers.py"
-        >>> root.path()             # "."
+        Examples
+        --------
+        >>> n.path()                    # "src/utils/helpers.py"
+        >>> n.path(with_root=True)      # "./src/utils/helpers.py"
+        >>> root.path()                 # "."
+        >>> root.path(with_root=True)   # "./"
         """
         parts: list[str] = []
         node: Optional["ProjectNode"] = self
+
+        # Always skip the synthetic root's name; build relative parts.
         while node is not None:
-            # optionally skip the synthetic root
-            if with_root or node.parent is not None:
+            if node.parent is not None:
                 parts.append(node.name)
             node = node.parent
+
         s = sep.join(reversed(parts))
-        return s or "."
+
+        if with_root:
+            # Prefix "./" (or ".<sep>") for non-root; root becomes "./".
+            return f".{sep}{s}" if s else f".{sep}"
+        else:
+            # No prefix; root becomes "."
+            return s or "."
 
     # -----------------------------------------------------------
     # Tree manipulation
@@ -194,6 +208,7 @@ class ProjectNode:
     def model_dump(self, *, deep: bool = False) -> dict:
         d = {
             "id": self.id,
+            "stable_id": self.stable_id,
             "name": self.name,
             "is_file": self.is_file,
             "description": self.description,

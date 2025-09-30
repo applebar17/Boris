@@ -1,5 +1,5 @@
 import typer
-import logging, typer
+import logging
 from typing import Optional
 from pathlib import Path
 from platformdirs import user_config_dir
@@ -16,7 +16,6 @@ ai = typer.Typer(
     add_completion=False, help="Configure AI provider (OpenAI/Azure) and models."
 )
 app.add_typer(ai, name="ai")
-
 
 _console = Console()
 
@@ -127,7 +126,6 @@ def ai_use_openai(
     ),
 ):
     """Configure Boris to use Vanilla OpenAI services."""
-
     path = _env_path(global_)
     _set_env_var(path, "BORIS_OAI_PROVIDER", "openai")
     _set_env_var(path, "BORIS_OPENAI_API_KEY", api_key)
@@ -344,7 +342,7 @@ def chat(
     ),
     console: bool = True,
 ):
-    """Chat vs Boris for working on you current working project."""
+    """Chat vs Boris for working on your current working project."""
     cfg = Settings.load()
     base_logger = setup_logging(config_log_dir=cfg.log_dir)  # <— key change
     app_log = base_logger.getChild("app")
@@ -362,7 +360,6 @@ def chat(
         run_chat(logger=base_logger)
 
 
-# boris/cli.py (add)
 @app.command()
 def logs_path():
     """Print where Boris writes logs."""
@@ -375,13 +372,28 @@ def logs_path():
 @app.command()
 def version():
     """Return Boris version."""
-    import importlib.metadata as im
+    import typer
+    from importlib.metadata import version as _version, PackageNotFoundError
 
-    print(im.version("boris"))
+    DIST_NAME = "boris"
+
+    def get_app_version() -> str:
+        try:
+            return _version(DIST_NAME)  # works when installed
+        except PackageNotFoundError:
+            # fallback for dev/uninstalled checkouts
+            try:
+                from . import __version__
+
+                return __version__
+            except Exception:
+                return "0+unknown"
+
+    typer.echo(get_app_version())
 
 
 # @app.command()
 def ui():
     import webbrowser
 
-    webbrowser.open("https://github.com/your-org/boris")
+    webbrowser.open("https://github.com/applebar17/Boris")

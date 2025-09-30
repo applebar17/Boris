@@ -11,6 +11,7 @@ Boris CLI is a command-line chat application that interacts with local and remot
 ## Changelog
 * **0.1.0**: Initial release.
 * **0.1.1**: Improved reasoning and coding agent, minor and major fixes, context token management, and bug fixing.
+* **0.1.2**: Improved context management and tooling, improved terminal class interfacing, bug fixing, tests, minor fixes.
 
 ## Usage
 To use Boris CLI, install it via PyPI and run the command line interface to start interacting with the AI models.

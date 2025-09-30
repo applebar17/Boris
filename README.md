@@ -1,6 +1,6 @@
-# 🤖 Boris — Chat With Your Codebase (Editor-agnostic, Local-first)
+# 🤖 Boris — Chat with Your Codebase (Editor-Agnostic, Local-First)
 
-**Boris** is a **terminal AI assistant for developers**. It **studies your repo** and lets you **chat** about files and structure. This allows the user to delegate many development tasks to Boris itself: Boris is capable of refactoring and reviewing code, creating new features, and helping the user analyze the project, and it does everything fully aware of the project context. It works with **OpenAI** and **Azure OpenAI** today, with a roadmap for **Anthropic Claude** and **Google Gemini**.
+**Boris** is a **terminal AI assistant for developers**. It **studies your repo** and lets you **chat** about files and structure. This allows users to delegate many development tasks to Boris itself: Boris is capable of refactoring and reviewing code, creating new features, and helping users analyze the project, and it does everything fully aware of the project context. It works with **OpenAI** and **Azure OpenAI** today, with a roadmap for **Anthropic Claude** and **Google Gemini**.
 
 > Looking for a **Cursor / GitHub Copilot / Windsurf / Claude Code**-style assistant but **editor-agnostic** and **local-first**? Boris is a lightweight, repository-aware alternative you drive from the CLI—with explicit config, repeatable runs, and safety rails.
 
@@ -224,6 +224,10 @@ boris [COMMAND]
 ## 🏎️ Performance
 
 ### Usage
+
+* Rules of thumb (independent of the models configured):
+  * The more accurate the instructions provided are the better the results will be (garbage in - garbage out)
+  * Agent performs better on smaller files -> the bigger the files the higher the risks of hallucinations -> code quality drop
 
 * Boris on the first initialization at a certain path will take longer than usual to study the whole project (AI-enhanced) and save a current snapshot.
   * Next initializations will take less time: Boris will only sync differences

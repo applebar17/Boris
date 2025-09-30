@@ -7,10 +7,11 @@ import json
 import logging
 import hashlib
 from pathlib import Path
+from platformdirs import user_config_dir
 from typing import Union, List, Optional, Mapping, Dict, Any, Sequence
 from collections.abc import Mapping  # at top of file if not present
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 
 # OpenAI SDKs
 from openai import OpenAI, AzureOpenAI
@@ -46,6 +47,8 @@ from boris.boriscore.ai_clients.utils import (
     _extract_top_level_json,
     _sanitize_json_candidate,
     _strip_code_fence,
+    _non_empty_items,
+    _clean_val,
 )
 
 # ------------------------- optional tiktoken -------------------------
@@ -125,7 +128,12 @@ class ClientOAI:
                 "No .env loaded (or failed); proceeding with process env.", "debug"
             )
 
+        # Prime environment from global + project .env without clobbering OS env
+        self._prime_env_from_dotenv_chain()
+
+        # then read variables from the (now merged) environment
         self._load_env_vars()
+
         # --- Create client ---
         self.openai_client = self._make_client()
         # Back-compat alias: some old code referenced "openai_embeddings_client"
@@ -166,73 +174,113 @@ class ClientOAI:
                 pass
 
     # --------------------------- internals ---------------------------
+
+    def _global_env_path(self) -> Path:
+        # Matches your CLI (`boris ai show`) on all OSes
+        return Path(user_config_dir("boris", "boris")) / ".env"
+
+    def _project_env_path(self) -> Path:
+        return self.base_path / ".env"
+
+    def _prime_env_from_dotenv_chain(self) -> None:
+        """
+        Merge env from files with precedence:
+          OS env > project .env > global .env.
+        Only set keys that are currently missing or empty in os.environ.
+        Blank values in files are ignored.
+        """
+        global_env = _non_empty_items(dotenv_values(self._global_env_path()))
+        proj_env = _non_empty_items(dotenv_values(self._project_env_path()))
+
+        # Lowest first, then higher overrides (but never override real OS env)
+        merged = {}
+        merged.update(global_env)
+        merged.update(proj_env)
+
+        applied = []
+        for k, v in merged.items():
+            current = os.environ.get(k)
+            if _clean_val(current) is None:
+                os.environ[k] = v
+                applied.append(k)
+
+        if applied:
+            self._log(
+                f"Loaded env keys from files: {', '.join(sorted(applied))}", "debug"
+            )
+        else:
+            self._log(
+                "No env keys loaded from files (OS env already complete?).", "debug"
+            )
+
     def _load_env_vars(self) -> None:
-
         # --- Provider & auth ---
-        # Preferred: BORIS_OAI_PROVIDER in {"openai","azure"}
-        self.provider: str = os.getenv("BORIS_OAI_PROVIDER", "").strip().lower()
+        provider_raw = os.getenv("BORIS_OAI_PROVIDER", "").strip().lower()
+        self.provider: str = provider_raw or (
+            "azure"
+            if _clean_val(
+                os.getenv("BORIS_AZURE_OPENAI_ENDPOINT")
+                or os.getenv("AZURE_OPENAI_ENDPOINT")
+            )
+            else "openai"
+        )
 
-        # Azure config (legacy vars supported)
-        self.azure_endpoint: Optional[str] = os.getenv(
-            "BORIS_AZURE_OPENAI_ENDPOINT"
-        ) or os.getenv("AZURE_OPENAI_ENDPOINT")
-        self.azure_api_key: Optional[str] = os.getenv(
-            "BORIS_AZURE_OPENAI_API_KEY"
-        ) or os.getenv("AZURE_OPENAI_API_KEY")
-        self.azure_api_version: Optional[str] = (
+        self.azure_endpoint: Optional[str] = _clean_val(
+            os.getenv("BORIS_AZURE_OPENAI_ENDPOINT")
+            or os.getenv("AZURE_OPENAI_ENDPOINT")
+        )
+        self.azure_api_key: Optional[str] = _clean_val(
+            os.getenv("BORIS_AZURE_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+        )
+        self.azure_api_version: Optional[str] = _clean_val(
             os.getenv("BORIS_AZURE_OPENAI_API_VERSION")
             or os.getenv("AZURE_OPENAI_API_VERSION")
             or "2025-04-01-preview"
         )
 
-        # OpenAI config
-        self.openai_api_key: Optional[str] = os.getenv(
-            "BORIS_OPENAI_API_KEY"
-        ) or os.getenv("OPENAI_API_KEY")
-        # Optional custom base (e.g., proxy/gateway)
-        self.openai_base_url: Optional[str] = (
+        self.openai_api_key: Optional[str] = _clean_val(
+            os.getenv("BORIS_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        )
+        self.openai_base_url: Optional[str] = _clean_val(
             os.getenv("BORIS_OPENAI_BASE_URL")
             or os.getenv("OPENAI_BASE_URL")
             or os.getenv("OPENAI_API_BASE")
         )
 
-        # If provider not explicitly set, infer from presence of Azure endpoint
-        if not self.provider:
-            self.provider = "azure" if self.azure_endpoint else "openai"
         self._log(f"Provider resolved to: {self.provider}", "debug")
 
-        # --- Models (BORIS_* first, then legacy fallbacks) ---
-        # Chat (default general LLM)
-        self.model_chat: Optional[str] = (
+        # --- Models ---
+        self.model_chat: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_CHAT")
-            or os.getenv("AZURE_OPENAI_DEPLOYMENT_4O_MINI")  # legacy fallback
+            or os.getenv("AZURE_OPENAI_DEPLOYMENT_4O_MINI")  # legacy
             or os.getenv("OPENAI_MODEL_CHAT")
+            or (
+                "gpt-4o-mini" if self.provider == "openai" else None
+            )  # safe default only for OpenAI
         )
-        # Coding (optionally use a different model, else fallback to chat)
-        self.model_coding: Optional[str] = (
+
+        self.model_coding: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_CODING")
             or os.getenv("OPENAI_MODEL_CODING")
             or self.model_chat
         )
-        # Reasoning (o3, o4, etc.)
-        self.model_reasoning: Optional[str] = (
+
+        self.model_reasoning: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_REASONING")
-            or os.getenv("AZURE_OPENAI_DEPLOYMENT_o3_MINI")  # legacy fallback
+            or os.getenv("AZURE_OPENAI_DEPLOYMENT_o3_MINI")  # legacy
             or os.getenv("OPENAI_MODEL_REASONING")
             or self.model_chat
         )
-        # Embeddings
-        self.embedding_model: Optional[str] = (
+
+        self.embedding_model: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_EMBEDDING")
-            or os.getenv("AZURE_OPENAI_EMBEDDING_MODEL")  # legacy fallback
+            or os.getenv("AZURE_OPENAI_EMBEDDING_MODEL")
             or os.getenv("OPENAI_MODEL_EMBEDDING")
             or "text-embedding-3-small"
         )
 
-        # For backward-compat with existing calls
+        # Back-compat alias
         self.llm_model: Optional[str] = self.model_chat
-
-        return None
 
     def _log(self, msg: str, log_type: str = "info") -> None:
         """Uniform logging wrapper."""

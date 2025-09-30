@@ -47,6 +47,8 @@ Produce a concise **plan** composed of one or more **Coding Actions**. Each acti
 7. **No Expansive Refactors:** No reorg/renames/deps unless explicitly requested.
 8. **Tests & Wiring:** If creating a module, ensure reachability (exports/imports/entrypoints updated) and mention the minimal test to add/adjust.
 9. **Stepwise Retrieval:** If uncertain between two files, retrieve **one** most likely file first. Only add another retrieval in a subsequent action if the first was insufficient.
+10. **Dependency**: You can create separated action items which are dependent one to the other: be sure to keep a sequential logical order.
+11. **Size**: prefer creating more smaller action items over bigger but fewer -> "division of labour"  
 
 # Contextual Retrieval Map (when to pull extra files)
 
@@ -350,14 +352,14 @@ Minimum files to retrieve (strict):
 
 Edit plan:
 {edit_bullets}
-
-Expected outcome (pseudocode):
-{expected_outcome_block}
 """
+# Expected outcome (pseudocode):
+# {expected_outcome_block}
+# """
 
 # --- SUMMARIZATION ---
 
-OUTPUT_SUMMARY_SYSTEM_PROMPT = """You are a concise senior code reviewer.
+OUTPUT_SUMMARY_SYSTEM_PROMPT = """You are a senior code reviewer.
 Given (1) the original user request, (2) the planned actions outline, and (3) the raw per-action outputs produced by the code-writing agent,
 produce a single, clear, user-facing summary of what was done.
 
@@ -366,6 +368,12 @@ Rules:
 - Keep it tight and scannable.
 - Prefer bullets over long prose; include file paths and command names when relevant.
 - If follow-ups or caveats appear in the outputs, include a short "Next steps" section.
+
+You're exposing the result of an Agentic AI process, where the final consumer, the chatbot interfacing, is in a dynamic state, where he can call different tools for starting processes.
+In the current state, you should be the clearest as possible for eventual suggestions / next steps et similar by explicitly writing to report to the user eventual next steps as suggestions: the AI might misunderstand your suggestions as a new job / task, but that could be an hallucination.
+
+You must be very clear in summarizing what has been done during the previous processes and dictate the chatbot to always report to the user what's has been done. Do not report mis-understandable outputs which may lead the chatbot to involve other tools / agent. 
+You're a reporter: be explicit in not invoking any further tool or process.
 """
 
 OUTPUT_SUMMARY_USER_TEMPLATE = """Original request:
@@ -530,11 +538,13 @@ Guidelines for generation
 3. If new external libraries are needed, add concise installation or import notes at the top as comments.
 4. Write thorough inline docstrings and type annotations where appropriate.
 5. Ensure determinism: identical inputs always yield identical outputs.
+6. When outputting runtime files content (TOML/INI/JSON/YAML/etc.), emit content-only in the target syntax—no Markdown fences, no YAML front-matter (---/...).
+7. Absolutely MANDATORY: when updating a file, to generate again the full code / content of the file. The content will over-write the previous content so it is mandatory to generate both the old code plus the patches for the update.
 
-Tooling
 • Retrieve additional files for context awareness only when esplicitly asked for.
 • You retrieve files by calling **retrieve_code(<file_id>)**, where `<file_id>` is any identifier present in the project structure above.  
 • Use the tool sparingly—only when the additional file genuinely informs the current task (e.g., shared utilities, interfaces, or style references). 
 • File ids are encapsulated in square brackets in the current project structure, for example [root/models/api.py] -> 'root/models/api.py' is the node/file id.
+• You MUST actively perform the task on the Code. Do not ask for confirmations, just act directly on the code.
 
 """

@@ -75,12 +75,12 @@ class Action(BaseModel):
         min_length=1,
     )
 
-    expected_outcome: List[str] = Field(
-        ...,
-        description="5–15 lines of pseudocode describing the resulting flow/API surface/code content",
-        min_length=1,
-        max_length=20,
-    )
+    # expected_outcome: List[str] = Field(
+    #     ...,
+    #     description="5–15 lines of pseudocode describing the resulting flow/API surface/code content",
+    #     min_length=1,
+    #     max_length=20,
+    # )
 
     # ---- Validators ----
 
@@ -133,7 +133,9 @@ class ReasoningPlan(BaseModel):
     """
 
     actions: List[Action] = Field(
-        ..., min_length=1, description="Ordered plan items (Coding Actions)."
+        ...,
+        min_length=1,
+        description="Ordered plan of items (Coding Actions).",
     )  # List[PlanItem]
 
     constraints: Optional[str] = Field(

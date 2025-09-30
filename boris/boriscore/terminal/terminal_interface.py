@@ -9,33 +9,16 @@ import shlex
 import shutil
 import logging
 import subprocess
+import tiktoken
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Mapping, Sequence, Literal, List, Set, Callable
 
 from boris.boriscore.utils.utils import log_msg
-
+from boris.boriscore.terminal.models import CommandResult
 
 # Public type for selecting a shell
 Shell = Literal["bash", "pwsh", "powershell", "cmd"]
-
-
-@dataclass
-class CommandResult:
-    """
-    Result of running a single shell command.
-    """
-
-    cmd: str | list[str]  # Command string or argv actually invoked
-    returncode: int  # Process exit code (-1 on timeout)
-    stdout: str  # Captured standard output (possibly truncated)
-    stderr: str  # Captured standard error (possibly truncated)
-    elapsed: float  # Wall time in seconds
-    # Extra metadata
-    shell: str = "bash"  # Shell used
-    cwd: str = ""  # Working directory
-    timeout: bool = False  # True if process timed out
-    truncated: bool = False  # True if stdout/stderr were truncated
 
 
 class TerminalExecutor:
@@ -60,7 +43,9 @@ class TerminalExecutor:
         *,
         safe_mode: bool = True,
         denylist: Optional[Sequence[str]] = None,
-        max_output_chars: int = 16000,
+        max_output_tokens: int = 4000,
+        first_tokens: int = 200,
+        last_tokens: int = 3000,
     ):
         self.base_path = Path(base_path).expanduser().resolve()
         self.logger = logger
@@ -88,22 +73,31 @@ class TerminalExecutor:
             r"\bformat\b",
             r"\bdocker\s+(rm|rmi|system\s+prune)\b",
             r"\bkubectl\s+delete\b",
-            r"(?:^|\s)>\s",  # redirection
+            r"(?:^|\s)>(\s|$)",  # redirection
             r"(?:^|\s)>>\s",  # redirection append
             r"\|\s*sponge\b",
             # fork bombs
-            r":\(\)\s*\{\s*:\s*\|\s*:\s*;\s*\}\s*;:\s*",
+            r":\(\)\s*\{\s*: \|\s*:;\s*\}\s*;:\s*",
         ]
         if denylist:
             default_deny.extend(list(denylist))
         self._deny_re = re.compile("|".join(default_deny), re.IGNORECASE)
 
         self._ansi_re = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
-        self._max_output_chars = int(max_output_chars)
+        self.max_tokens = int(max_output_tokens)
 
-        self.on_event: Optional[Callable[[str, Path], None]] = (
-            None  # global sink for CRUD events
-        )
+        # Tokenizer & budgets
+        self.token_encoder = tiktoken.get_encoding("cl100k_base")
+        self.first_tokens = int(first_tokens)
+        self.last_tokens = int(last_tokens)
+        # Ensure budgets make sense against the cap
+        if self.first_tokens < 0 or self.last_tokens < 0:
+            raise ValueError("first_tokens and last_tokens must be >= 0")
+        if self.first_tokens + self.last_tokens > self.max_tokens:
+            # Keep the first N and shrink the tail to fit
+            self.last_tokens = max(0, self.max_tokens - self.first_tokens)
+
+        self.on_event: Optional[Callable[[str, Path], None]] = None
 
     def _log(self, msg: str, log_type: str = "info") -> None:
         log_msg(self.logger, msg, log_type=log_type)
@@ -127,16 +121,50 @@ class TerminalExecutor:
     def _strip_ansi(self, s: str) -> str:
         return self._ansi_re.sub("", s or "")
 
-    def _truncate(self, s: str, limit: int) -> tuple[str, bool]:
+    def _crop_middle_tokens(
+        self,
+        s: str,
+        *,
+        limit_tokens: Optional[int] = None,
+        first_tokens: Optional[int] = None,
+        last_tokens: Optional[int] = None,
+    ) -> tuple[Optional[str], bool]:
         """
-        Cap string length to 'limit'. Returns (maybe_truncated_string, truncated_flag).
+        Middle-truncate text by tokens:
+        If tokenized length > limit_tokens, keep first `first_tokens` and last `last_tokens`
+        tokens and insert a truncation marker in between.
+
+        Returns (maybe_truncated_string, truncated_flag).
         """
-        if s is None:
-            return "", False
-        if len(s) <= limit:
+        if not s:
+            return None, False
+
+        toks = self.token_encoder.encode(s)
+        n = len(toks)
+
+        limit = int(limit_tokens if limit_tokens is not None else self.max_tokens)
+        head_n = int(first_tokens if first_tokens is not None else self.first_tokens)
+        tail_n = int(last_tokens if last_tokens is not None else self.last_tokens)
+
+        # Normalize budgets
+        head_n = max(0, head_n)
+        tail_n = max(0, tail_n)
+        if head_n + tail_n > limit:
+            tail_n = max(0, limit - head_n)
+
+        if n <= limit:
             return s, False
-        head = max(0, limit - 200)  # reserve space for the truncation note
-        return s[:head] + f"\n… [truncated {len(s) - head} chars]\n", True
+
+        head = toks[:head_n] if head_n > 0 else []
+        tail = toks[-tail_n:] if tail_n > 0 else []
+        omitted = n - (head_n + tail_n)
+
+        # Note: we don't force the marker to fit inside limit; we prioritize head/tail budgets.
+        marker = f"\n… [truncated {omitted} tokens]\n"
+        cropped = (
+            self.token_encoder.decode(head) + marker + self.token_encoder.decode(tail)
+        )
+        return cropped, True
 
     def _resolve_cwd(self, workdir: str | Path | None) -> Path:
         """
@@ -289,11 +317,13 @@ class TerminalExecutor:
             out, err = self._strip_ansi(out), self._strip_ansi(err)
 
         # Cap output sizes (split budget across streams)
-        out, t1 = self._truncate(out, self._max_output_chars // 2)
-        err, t2 = self._truncate(err, self._max_output_chars // 2)
+        out, t1 = self._crop_middle_tokens(
+            out
+        )  # uses self.max_tokens / self.first_tokens / self.last_tokens
+        err, t2 = self._crop_middle_tokens(err)
 
         self._log(
-            f"{shell} rc={rc} elapsed={elapsed:.2f}s stdout_len={len(out)} stderr_len={len(err)}",
+            f"{shell} rc={rc} elapsed={elapsed:.2f}s",
             "debug",
         )
 
@@ -415,17 +445,35 @@ class TerminalExecutor:
             meta.append("timeout: true")
         header = "\n".join(meta)
 
-        parts = [
-            header,
-            "\n\nSTDOUT:\n```text\n",
-            result.stdout,
-            "\n```\n",
-            "STDERR:\n```text\n",
-            result.stderr,
-            "\n```\n",
-        ]
+        # Backtick-safe fenced block
+        def _fence(s: str, lang: str = "text") -> str:
+            if not s:
+                return ""
+            # Find longest run of backticks in content; fence with one more
+            longest = 0
+            for m in re.finditer(r"`+", s):
+                longest = max(longest, len(m.group(0)))
+            fence = "`" * max(3, longest + 1)
+            return f"{fence}{lang}\n{s}\n{fence}\n"
+
+        parts: list[str] = [header]
+
+        has_stream = False
+        if result.stdout:
+            parts.append("\n\nSTDOUT:\n")
+            parts.append(_fence(result.stdout))
+            has_stream = True
+        if result.stderr:
+            parts.append("STDERR:\n")
+            parts.append(_fence(result.stderr))
+            has_stream = True
+
+        if not has_stream:
+            parts.append("\n\n(no output)\n")
+
         if result.truncated:
             parts.append("_note: output truncated to keep it concise._\n")
+
         return "".join(parts)
 
     def run_terminal_tool(

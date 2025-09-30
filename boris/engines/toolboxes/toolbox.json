@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "invoke_ai_coding_assistant",
-      "description": "Call an agent able of creating / updating / retrieving / deleting coding files out of a user request. It will summarize to you the final process output. It can as well run temrimanl commands.",
+      "description": "Call an agent able of creating / updating / retrieving / deleting coding files out of a user request. It will summarize to you the final process output. It can as well run terminal commands.",
       "strict": true,
       "parameters": {
         "type": "object",
@@ -63,7 +63,7 @@
     "type": "function",
     "function": {
       "name": "run_terminal_commands",
-      "description": "Run a single or multiple command in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode.",
+      "description": "Run a single or multiple terminal commands in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode. You will be running these commands from the root of the project: be careful in navigating the directories beforehand.",
       "strict": true,
       "parameters": {
         "type": "object",

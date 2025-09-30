@@ -1,4 +1,23 @@
 import re
+import os
+import logging
+from pathlib import Path
+from typing import Optional
+from platformdirs import user_config_dir
+from dotenv import dotenv_values  # NOTE: dict-only; does not touch os.environ
+
+EMPTY = {None, "", " ", "\t", "\n"}
+
+
+def _clean_val(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s if s else None
+
+
+def _non_empty_items(d: dict) -> dict:
+    return {k: v for k, v in (d or {}).items() if _clean_val(v) is not None}
 
 
 def _strip_code_fence(s: str) -> str:

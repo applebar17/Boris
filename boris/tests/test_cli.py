@@ -6,11 +6,16 @@ from typer.testing import CliRunner
 
 from boris.cli import app
 
-runner = CliRunner()
+
+@pytest.fixture()
+def cli_runner() -> CliRunner:
+    """Fixture to create a CLI runner instance."""
+    return CliRunner()
+
 
 @pytest.fixture()
 def temp_project(tmp_path: Path):
-    # minimal project
+    """Fixture to create a minimal project structure for testing."""
     (tmp_path / "pyproject.toml").write_text(
         "[project]\nname='demo'\nversion='0.0.0'\n"
     )
@@ -18,21 +23,28 @@ def temp_project(tmp_path: Path):
     (tmp_path / "srcpkg" / "__init__.py").write_text("# demo\n")
     return tmp_path
 
-def test_version_command():
-    r = runner.invoke(app, ["version"])
-    assert r.exit_code == 0
-    # prints something like "0.1.0"
-    assert r.stdout.strip()
 
-def test_chat_help():
-    r = runner.invoke(app, ["chat", "--help"])
-    assert r.exit_code == 0
-    assert "Start terminal chat" in r.stdout
+def test_version_command(cli_runner):
+    """Test the version command of the CLI."""
+    result = cli_runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "0.1.2"
 
-def test_chat_script_mode_runs_and_exits(temp_project: Path):
-    # run from inside the temp project so LocalEngine scans it
-    with runner.isolated_filesystem():
-        # copy temp project contents into CWD for LocalEngine(base=cwd)
+
+def test_chat_help(cli_runner):
+    """Test the help command for the chat functionality."""
+    result = cli_runner.invoke(app, ["chat", "--help"])
+    assert result.exit_code == 0
+    assert (
+        "chat vs boris for working on your current working project"
+        in result.stdout.lower()
+    )
+
+
+def test_chat_script_mode_runs_and_exits(cli_runner, temp_project: Path):
+    """Test the chat command in script mode."""
+    with cli_runner.isolated_filesystem():
+        # Copy temp project contents into CWD for LocalEngine(base=cwd)
         for p in temp_project.iterdir():
             dest = Path(".") / p.name
             if p.is_dir():
@@ -40,10 +52,12 @@ def test_chat_script_mode_runs_and_exits(temp_project: Path):
             else:
                 shutil.copy2(p, dest)
 
-        # basic scripted session: say hello, then /exit
-        r = runner.invoke(
+        # Basic scripted session: say hello, then /exit
+        result = cli_runner.invoke(
             app, ["chat", "--script", "hello;/exit"], catch_exceptions=False
         )
-        assert r.exit_code == 0
-        # Should have printed some assistant text
-        assert "hello" not in r.stderr.lower()
+        assert result.exit_code == 0
+        assert "hello" not in result.stderr.lower()  # Ensure assistant text is printed
+
+
+# Additional tests can be added here to cover more CLI functionality

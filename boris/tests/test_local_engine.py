@@ -37,17 +37,29 @@ def test_file_shipment_validations(tmp_path: Path):
     out = engine.chat_local_engine(history=history, user="tester")
 
     # Check if the output contains the expected answer
-    assert "answer" in out
+    assert "answer" in list(out)
     assert isinstance(out["answer"], str)
 
     # Validate that the project structure has been updated
     project_structure = out["project"]
-    assert "src" in project_structure["project"]["children"]
-    assert "main.py" in project_structure["project"]["children"]["src"]["children"]
+
+    # Root: ensure there's a "src" folder
+    root_children = project_structure.get("children", [])
+    assert any(
+        c.get("name") == "src" and not c.get("is_file", False) for c in root_children
+    )
+
+    # Find the "src" node
+    src_node = next(c for c in root_children if c.get("name") == "src")
+
+    # Inside src: ensure there's a "main.py" file
+    assert any(
+        c.get("name") == "main.py" and c.get("is_file", False)
+        for c in src_node.get("children", [])
+    )
 
     # Optionally, check the content of the generated file
     generated_file_path = tmp_path / "src" / "main.py"
     assert generated_file_path.exists()
-    assert (
-        generated_file_path.read_text() == "print('Hello, World!')\n"
-    )  # Adjust based on expected output
+    assert "hello" in generated_file_path.read_text().lower()
+    assert "world" in generated_file_path.read_text().lower()

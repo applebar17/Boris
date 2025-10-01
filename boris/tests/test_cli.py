@@ -28,7 +28,7 @@ def test_version_command(cli_runner):
     """Test the version command of the CLI."""
     result = cli_runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "0.1.3"
+    assert result.stdout.strip() == "0.1.4"
 
 
 def test_chat_help(cli_runner):

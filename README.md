@@ -35,7 +35,7 @@ Boris is on **PyPI** as **`boris-cli`**.
 
 ```bash
 # Pin to the released version
-pip install boris-cli==0.1.3
+pip install boris-cli==0.1.4
 
 # …or just get the latest
 pip install -U boris-cli
@@ -267,7 +267,7 @@ See [LICENSE](./LICENSE) for details.
 
 ---
 
-**PyPI page:** [https://pypi.org/project/boris-cli/0.1.3/](https://pypi.org/project/boris-cli/0.1.3/)  
-**Install:** `pip install boris-cli==0.1.3`  
+**PyPI page:** [https://pypi.org/project/boris-cli/0.1.4/](https://pypi.org/project/boris-cli/0.1.4/)  
+**Install:** `pip install boris-cli==0.1.4`  
 
 ---

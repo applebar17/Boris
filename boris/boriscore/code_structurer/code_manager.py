@@ -23,6 +23,7 @@ from boris.boriscore.code_structurer.prompts import (
     CODE_GEN_SYS_PROMPT,
     FILEDISK_DESCRIPTION_METADATA,
 )
+from boris.boriscore.code_structurer.toolbox import TOOLBOX
 from boris.boriscore.code_structurer.models import FileDiskMetadata, Code
 from boris.boriscore.utils.resources import load_ignore_patterns
 
@@ -41,10 +42,6 @@ class CodeProject(ClientOAI, TerminalExecutor):
         output_project_path: Path = Path("data/processed"),
         logger: Optional[logging.Logger] = None,
         init_root: bool = True,
-        code_project_toolbox_path: Path = Path(
-            "boris/boriscore/code_structurer/toolboxes/toolbox.json"
-        ),
-        toolbox_override: Path | None = None,
         cmignore_override: Optional[Path] = None,
         *args,
         **kwargs,
@@ -80,14 +77,7 @@ class CodeProject(ClientOAI, TerminalExecutor):
         self.code_project_allowed_tools = [
             "retrieve_node",
         ]
-        self.code_project_toolbox = load_toolbox(
-            base_path=self.base_path,
-            dev_relpath=code_project_toolbox_path,
-            package="boris.boriscore.code_structurer",
-            package_relpath="toolboxes/toolbox.json",
-            user_override=toolbox_override,
-            env_vars=("BORIS_CODEWRITER_AGENT_TOOLBOX"),
-        )
+        self.code_project_toolbox = TOOLBOX
 
         super().__init__(base_path=self.base_path, logger=self.logger, *args, **kwargs)
 
@@ -425,14 +415,16 @@ class CodeProject(ClientOAI, TerminalExecutor):
             self._emit("created dir", root_dst, on_event)
 
         if new_parent_id:
-            parent = self.retrieve_node(new_parent_id, dump=False)
+            parent = self.retrieve_node(node_id=new_parent_id, dump=False)
         else:
-            parent = self.retrieve_node(parent=node.parent, dump=False)
+            parent = self.retrieve_node(node_id=node.parent.id, dump=False)
 
         name = new_name if new_name else node.name
+
         # --- ID change bookkeeping (unchanged from yours) ---
         new_id_message = None
-        if new_parent_id or name:
+        new_id = None
+        if new_parent_id:
             self._assert_parent_is_folder(parent)
             self._assert_unique_sibling_name(parent, name)
 

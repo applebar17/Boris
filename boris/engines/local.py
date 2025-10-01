@@ -5,6 +5,7 @@ from typing import Optional
 from functools import partial
 from langsmith import traceable
 from boris.boriscore.utils.utils import log_msg, load_toolbox
+from boris.engines.toolbox import TOOLBOX
 from boris.boriscore.code_structurer.code_manager import CodeProject
 from boris.boriscore.agent.coding_agent import CodeWriter
 from boris.engines.prompts import CHATBOT
@@ -30,10 +31,6 @@ class LocalEngine:
         self,
         base_path: Optional[pathlib.Path] = None,
         logger: Optional[logging.Logger] = None,
-        chatbot_toolbox_path: pathlib.Path = pathlib.Path(
-            "boris/engines/toolboxes/toolbox.json"
-        ),
-        toolbox_override: pathlib.Path | None = None,
     ):
         self.base = base_path or pathlib.Path.cwd()
         # if not provided, fall back to package logger
@@ -48,14 +45,7 @@ class LocalEngine:
             base_path=self.base,
         )
 
-        self.chatbot_toolbox = load_toolbox(
-            base_path=self.base,
-            dev_relpath=chatbot_toolbox_path,
-            package="boris.engines",
-            package_relpath="toolboxes/toolbox.json",
-            user_override=toolbox_override,
-            env_vars=("BORIS_CHATBOT_TOOLBOX"),
-        )
+        self.chatbot_toolbox = TOOLBOX
 
         self.chatbot_allowed_tools = [
             "invoke_ai_coding_assistant",

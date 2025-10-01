@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "boris-cli"
-version = "0.1.2"
+version = "0.1.3"
 description = "Terminal-first AI coding/chat assistant with safe shell tools."
 readme = "README_PYPI.md"
 requires-python = ">=3.10"
@@ -21,14 +21,14 @@ dependencies = [
   "prompt-toolkit>=3.0",
   "pydantic>=2",
   "typing-extensions>=4.11",
-  "httpx>=0.27", # if RemoteEngine uses HTTP; otherwise remove
-  "openai>=1.0.0", # if CodeWriter uses OpenAI; otherwise remove
+  "httpx>=0.27",
+  "openai>=1.107.2", 
   "python-dotenv>=1.0.0",
-  # tomli only for Python <3.11
   "tomli; python_version<'3.11'",
   "pathspec>=0.12.1",
   "langsmith>=0.4.27",
   "tiktoken>=0.11.0",
+  "ulid>=1.1",
 ]
 
 classifiers = [

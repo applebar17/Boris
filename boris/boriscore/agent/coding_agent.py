@@ -10,7 +10,6 @@ from openai.types.chat.chat_completion_message_param import (
     ChatCompletionUserMessageParam,
 )
 from langsmith import traceable
-
 from boris.boriscore.code_structurer.code_manager import CodeProject
 from boris.boriscore.agent.prompts import (
     REASONING,
@@ -23,6 +22,7 @@ from boris.boriscore.agent.prompts import (
     AGENT_CHAT_MESSAGE_V2,
     CODE_GEN,
 )
+from boris.boriscore.agent.toolbox import TOOLBOX
 from boris.boriscore.utils.utils import handle_path, log_msg, load_toolbox
 from boris.boriscore.agent.models import (
     ReasoningPlan,
@@ -56,12 +56,8 @@ class CodeWriter(CodeProject):
         self,
         logger: Optional[logging.Logger] = None,
         base_path: Path = Path("."),
-        code_writer_toolbox_path: Path = Path(
-            "boris/boriscore/agent/toolboxes/toolbox.json"
-        ),
         asset_path: Path = Path("assets"),
         init_root: bool = True,
-        toolbox_override: Optional[Path] = None,
         use_coding_agent_tools: bool = False,  # explicit toggle for AI-assisted create/update (toolbox_v2 + create and update node ai agent)
         *args,
         **kwargs,
@@ -78,14 +74,7 @@ class CodeWriter(CodeProject):
         self._log(f"Assets path = {self.assets_path}")
 
         # Load toolbox
-        self.code_writer_toolbox: Dict[str, Any] = load_toolbox(
-            base_path=self.base_path,
-            dev_relpath=code_writer_toolbox_path,
-            package="boris.boriscore.agent",
-            package_relpath="toolboxes/toolbox.json",
-            user_override=toolbox_override,
-            env_vars=("BORIS_REASONING_AGENT_TOOLBOX",),
-        )
+        self.code_writer_toolbox: Dict[str, Any] = TOOLBOX
 
         # Allowed tool names (contract for the agent)
         self.code_writer_allowed_tools: List[str] = [

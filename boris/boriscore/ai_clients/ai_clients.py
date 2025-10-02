@@ -41,7 +41,7 @@ except Exception:  # pragma: no cover - tracing is optional
     wrap_openai = None  # type: ignore
 
 from boris.boriscore.utils.utils import log_msg
-from boris.boriscore.ai_clients.models import OpenaiApiCallReturnModel
+from boris.boriscore.ai_clients.protocols.protocol_chat import OpenaiApiCallReturnModel
 from boris.boriscore.ai_clients.utils import (
     _close_stack,
     _extract_top_level_json,

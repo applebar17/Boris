@@ -61,7 +61,7 @@ class Action(BaseModel):
 
     files_to_retrieve: List[RelevantFiles] = Field(
         default_factory=list,
-        description="Relevant context (target + at most 2 to 3 integration point, etc.). Maximum 5 files.",
+        description="Relevant dependent context files (at least: target and 1 to 3 integration points, etc.). Maximum 10 files.",
     )
 
     target_path: str = Field(

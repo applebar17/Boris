@@ -14,23 +14,21 @@ from boris.boriscore.code_structurer.code_manager import CodeProject
 from boris.boriscore.agent.prompts import (
     REASONING,
     AGENT_CHAT_MESSAGE,
-    AGENT_SYSTEM_PROMPT,
     ACTION_REASONING_TEMPLATE,
     OUTPUT_SUMMARY_SYSTEM_PROMPT,
     OUTPUT_SUMMARY_USER_TEMPLATE,
     ACTION_PLANNER_SYSTEM_PROMPT,
-    AGENT_CHAT_MESSAGE_V2,
     CODE_GEN,
 )
 from boris.boriscore.agent.toolbox import TOOLBOX
-from boris.boriscore.utils.utils import handle_path, log_msg, load_toolbox
+from boris.boriscore.utils.utils import handle_path, log_msg
 from boris.boriscore.agent.models import (
     ReasoningPlan,
     Action,
     ActionPlanningOutput,
     Operation,
 )
-from boris.boriscore.ai_clients.models import OpenaiApiCallReturnModel
+from boris.boriscore.ai_clients.protocols.protocol_chat import OpenaiApiCallReturnModel
 from boris.boriscore.agent.utils import (
     _join_outputs_for_summary,
     _actions_outline_for_summary,

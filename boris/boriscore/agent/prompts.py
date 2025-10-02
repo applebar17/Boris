@@ -341,22 +341,6 @@ AGENT_CHAT_MESSAGE_V2 = """Accordingly to the following detailed coding plan:
 Perform the approapriate actions (tool calls) over the current codebase.
 """
 
-ACTION_REASONING_TEMPLATE = """# Action Reasoning
-
-Intent: {intent}
-Operation: {operation}
-Target Path: {target_path}
-
-Minimum files to retrieve (strict):
-{retrieve_bullets}
-
-Edit plan:
-{edit_bullets}
-"""
-# Expected outcome (pseudocode):
-# {expected_outcome_block}
-# """
-
 # --- SUMMARIZATION ---
 
 OUTPUT_SUMMARY_SYSTEM_PROMPT = """You are a senior code reviewer.
@@ -420,32 +404,29 @@ DIR [ROOT] <project name>: <description>
 
 You may retrieve files **in addition** to `relevant_files_to_retrieve` **only when** they are directly necessary to plan the edit correctly (e.g., a file is **imported/referenced** by a retrieved file or is the **single integration point** that wires the feature).
 
-**Retrieval Budget:** You are limited to **6 total `retrieve_node` calls** for this action.
+**Retrieval Budget:** You are limited to **10 total `retrieve_node` calls for this action.
 
 * This cap **includes** the initial relevant files you decide to actually fetch.
-* If `relevant_files_to_retrieve` has more than 6 candidates, **prioritize** and fetch only the top ones (see Priority below).
-* **After each retrieval**, decrement your budget. When the budget reaches 0, **stop retrieving** and proceed to plan with the best available context.
+* If `relevant_files_to_retrieve` has more than 10 candidates, **prioritize** and fetch only the top ones (see Priority below).
 * **Never re-fetch** the same path; avoid aliases/symlinks; canonicalize paths.
 
 **Priority (highest first):**
 
 1. **Target file** to be updated/created/deleted.
-2. **Single integration point** that wires the target (router/registry/CLI index/`__init__.py`).
-3. **Directly imported module** that constrains the API you must call/change (limit to **one hop**; do not chase deep transitive graphs).
-4. **Config/Settings** only if the change is config-driven.
-5. **Nearest test** only if it **directly** covers the target and informs behavior.
+2. **Single integration points** that wires the target (router/registry/CLI index/`__init__.py`).
+3. **Directly imported modules** that constrain the activity you must work on (limit to **one hop**; do not chase deep transitive graphs).
+4. **Nearest test** only if it **directly** covers the target and informs behavior.
 
 **When *not* to retrieve:**
 
 * Large library fan-outs, deep transitive imports, unrelated tests/READMEs/changelogs.
-* Anything not referenced by the target or the single integration point.
+* Anything not referenced by the target or the integration points.
 
 ---
 
 ## Output — Detailed Coding Plan (for the Coder)
 
 1. **Retrieval summary**
-
    * List each retrieved file as `path — why`.
    * If you **skipped** some suggested relevant files due to budget, say which and why.
    * If you **ran out of budget**, list any **assumptions** you had to make.
@@ -466,11 +447,10 @@ You may retrieve files **in addition** to `relevant_files_to_retrieve` **only wh
      ```
 
 3. **Wiring & tests**
-
+   * Annotate and document code (docstrings et similar).
    * Exports/routers/CLI registration; minimal tests to add/adjust.
 
 4. **Safety checks**
-
    * Idempotency guards (avoid duplicate exports), lints/types/build steps.
 
 ---
@@ -511,6 +491,23 @@ Operation mapping:
 
 If unsure between two files, retrieve the most likely one first, then continue if necessary.
 """
+
+ACTION_REASONING_TEMPLATE = """# Action Reasoning
+
+Intent: {intent}
+Operation: {operation}
+Target Path: {target_path}
+
+Minimum files to retrieve (strict):
+{retrieve_bullets}
+
+Edit plan:
+{edit_bullets}
+"""
+# Expected outcome (pseudocode):
+# {expected_outcome_block}
+# """
+
 
 # --- CODING AGENT ---
 CODE_GEN = """

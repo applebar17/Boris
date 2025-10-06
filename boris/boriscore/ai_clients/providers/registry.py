@@ -1,10 +1,16 @@
 from __future__ import annotations
-from typing import Optional, Dict
+
+import logging
+from typing import Optional, Dict, Union, Type
 
 from boris.boriscore.ai_clients.providers.base import LLMProviderAdapter
-from boris.boriscore.ai_clients.providers.openai_adapter import OpenAIAdapter
-from boris.boriscore.ai_clients.providers.azure_openai_adapter import AzureOpenAIAdapter
-from boris.boriscore.ai_clients.providers.anthropic_adapter import AnthropicAdapter
+from boris.boriscore.ai_clients.providers.openai.openai_adapter import OpenAIAdapter
+from boris.boriscore.ai_clients.providers.openai.azure_openai_adapter import (
+    AzureOpenAIAdapter,
+)
+from boris.boriscore.ai_clients.providers.anthropic.anthropic_adapter import (
+    AnthropicAdapter,
+)
 
 # Per-provider defaults (safe, opinionated). Azure needs deployment names,
 # so we DO NOT set defaults for Azure to avoid accidental base IDs.
@@ -52,20 +58,32 @@ ALIASES: Dict[str, str] = {
 
 _KINDS = {"chat", "coding", "reasoning", "embedding"}
 
-_REGISTRY: Dict[str, LLMProviderAdapter] = {
-    OpenAIAdapter.name: OpenAIAdapter(),
-    AzureOpenAIAdapter.name: AzureOpenAIAdapter(),
-    AnthropicAdapter.name: AnthropicAdapter(),
+Adapters = Union[OpenAIAdapter, AzureOpenAIAdapter, AnthropicAdapter]
+
+_REGISTRY: Dict[str, Type[LLMProviderAdapter]] = {
+    OpenAIAdapter.name: OpenAIAdapter,
+    AzureOpenAIAdapter.name: AzureOpenAIAdapter,
+    AnthropicAdapter.name: AnthropicAdapter,
 }
 
 
-def get_adapter(provider: str) -> LLMProviderAdapter:
-    key = (provider or "").strip().lower()
-    if key not in _REGISTRY:
+def _normalize_key(provider: str) -> str:
+    return (provider or "").strip().lower()
+
+
+def get_adapter(
+    provider: str,
+    logger: Optional[logging.Logger] = None,
+) -> LLMProviderAdapter:
+    key = _normalize_key(provider)
+    try:
+        cls = _REGISTRY[key]
+    except KeyError:
         raise ValueError(
             f"Unknown provider '{provider}'. Available: {', '.join(sorted(_REGISTRY))}"
         )
-    return _REGISTRY[key]
+    # inject logger at construction time
+    return cls(logger=logger)
 
 
 def canonicalize_provider(p: Optional[str]) -> str:

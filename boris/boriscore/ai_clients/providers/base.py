@@ -1,17 +1,22 @@
 from __future__ import annotations
 import tiktoken
+import logging
 from typing import Protocol, Any, Optional, Dict, Union
 from dataclasses import dataclass
+
+
+from openai import OpenAI, AzureOpenAI
+from anthropic import Anthropic
+from tiktoken import Encoding
+
 from boris.boriscore.ai_clients.protocols.protocol_chat import (
     Msg,
     ToolSpec,
     ChatRequest,
     ChatResponse,
 )
+from boris.boriscore.utils.utils import log_msg
 
-from openai import OpenAI, AzureOpenAI
-from anthropic import Anthropic
-from tiktoken import Encoding
 
 AllClients = Union[OpenAI, AzureOpenAI, Anthropic]
 
@@ -48,9 +53,17 @@ class LLMProviderAdapter(Protocol):
 
     name: str
 
-    def __init__(self):
-        self.encoder = tiktoken.get_encoding("cl100k_base")
+    def __init__(
+        self,
+        logger: Optional[logging.Logger] = None,
+    ):
+        self.encoder: Encoding = tiktoken.get_encoding("cl100k_base")
+        self.logger = logger
         return
+
+    def _log(self, msg: str, log_type: str = "info") -> None:
+        """Uniform logging wrapper."""
+        log_msg(self.logger, msg=msg, log_type=log_type)
 
     def make_client(self, cfg: ProviderConfig) -> Any: ...
     def describe(self, cfg: ProviderConfig) -> str: ...

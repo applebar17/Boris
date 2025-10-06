@@ -62,14 +62,14 @@ class CodeWriter(CodeProject):
     ):
         self.logger = logger
         self.base_path = handle_path(base_path=base_path, path=base_path)
-        self._log(f"Base path = {self.base_path}")
+        self._log(f"[agent] Base path = {self.base_path}")
 
         env_path = self.base_path / ".env"
-        self._log(f".env path = {env_path}")
+        self._log(f"[agent] .env path = {env_path}")
         load_dotenv(env_path.__str__())
 
         self.assets_path = self.base_path / asset_path
-        self._log(f"Assets path = {self.assets_path}")
+        self._log(f"[agent] Assets path = {self.assets_path}")
 
         # Load toolbox
         self.code_writer_toolbox: Dict[str, Any] = TOOLBOX
@@ -229,7 +229,9 @@ class CodeWriter(CodeProject):
         }
 
         # Helpful logs
-        self._log(f"Operation {getattr(op, 'value', op)} → tools: {names or '[]'}")
+        self._log(
+            f"[agent] Operation {getattr(op, 'value', op)} → tools: {names or '[]'}"
+        )
         if want and not names:
             self._log(
                 "WARNING: desired tools not present in toolbox or not allowed.",
@@ -297,7 +299,7 @@ class CodeWriter(CodeProject):
         temperature: float = 0.1,
     ) -> str:
         """Consolidate per-action outputs into a final user-facing summary."""
-        self._log("Summarizing content for response")
+        self._log("[agent] Summarizing content for response")
         actions_outline = _actions_outline_for_summary(reasoning_output)
         outputs_joined = _join_outputs_for_summary(output_messages)
 
@@ -319,6 +321,8 @@ class CodeWriter(CodeProject):
             user=user,
         )
         out: ChatResponse = self.call(params=params, tools_mapping=None)
+        self._log("[agent] Summarized output content.", "info")
+
         return out.message.content
 
     # -------------------- agent pipelines --------------------
@@ -390,7 +394,7 @@ class CodeWriter(CodeProject):
         self, chat_message: Union[str, list], user: Optional[str] = None
     ) -> ReasoningPlan:
         """Plan actions with the reasoning model, given the current project tree."""
-        self._log("Reasoning step chat")
+        self._log("[agent] Reasoning step chat.", "info")
         # uses CodeProject._emit → will go to CLI sink if present
         self._emit("reasoning...")
         project_structure = self.get_tree_structure(description=True)
@@ -407,7 +411,7 @@ class CodeWriter(CodeProject):
             raise ValueError("Unrecognized chat history/message structure.")
 
         available_tools = self.build_tool_blurb()
-        self._log(f"Reasoning model: {reasoning_model}", "debug")
+        self._log(f"[agent] Reasoning model: {reasoning_model}", "debug")
 
         tools = [self.code_writer_toolbox.get("retrieve_node")]
         params = self.handle_params(
@@ -447,7 +451,7 @@ class CodeWriter(CodeProject):
             return parsed
 
         except Exception as e:
-            self._log(f"Error while generating reasoning: {e}", "error")
+            self._log(f"[agent] Error while generating reasoning: {e}", "error")
             # Bubble up a clear exception; callers can catch and reply.
             raise
 
@@ -530,7 +534,7 @@ class CodeWriter(CodeProject):
                 parallel_tool_calls=False,
                 user=user,
             )
-            self._log(f"Entering Coder flow for user: {user}")
+            self._log(f"[agent] Entering Coder flow for user: {user}")
             output: ChatResponse = self.call(
                 params=params,
                 tools_mapping=filtered_mapping,
@@ -548,7 +552,7 @@ class CodeWriter(CodeProject):
             output_messages=output_messages,
             user=user,
         )
-        self._log("Returning final summary of the actions to the chatbot.")
+        self._log("[agent] Returning final summary of the actions to the chatbot.")
         return summary
 
     @traceable
@@ -559,7 +563,7 @@ class CodeWriter(CodeProject):
 
         # Sync first always
         self.sync_with_disk(ai_enrichment_metadata_pipe=False)
-        self._log("Agent message received.")
+        self._log("[agent] Agent message received.")
         plan = self.reasoning_step(chat_message=chat_history, user=user)
         # return self.generate_files_chat(
         #     reasoning_output=plan, chat_message=chat_history, user=user

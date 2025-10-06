@@ -238,7 +238,9 @@ class TerminalExecutor:
         cwd = self._resolve_cwd(workdir)
 
         if not allowed:
-            self._log(f"BLOCKED ({reason}): {cmd_str}", "warning")
+            self._log(
+                f"[terminal interfacing] BLOCKED ({reason}): {cmd_str}", "warning"
+            )
             return CommandResult(
                 cmd=cmd_str,
                 returncode=126,
@@ -353,6 +355,7 @@ class TerminalExecutor:
         timeout: float | None = None,
     ) -> CommandResult:
         # capture_output is always True internally; parameter kept for compatibility
+        self._log(f"[terminal interfacing] Running on bash", "info")
         return self.run_shell(
             "bash", command, check=check, env=env, text=text, timeout=timeout
         )
@@ -366,6 +369,8 @@ class TerminalExecutor:
         text: bool = True,
         timeout: float | None = None,
     ) -> CommandResult:
+        self._log(f"[terminal interfacing] Running on powershell", "info")
+
         return self.run_shell(
             "pwsh", command, check=check, env=env, text=text, timeout=timeout
         )
@@ -379,6 +384,7 @@ class TerminalExecutor:
         text: bool = True,
         timeout: float | None = None,
     ) -> CommandResult:
+        self._log(f"[terminal interfacing] Running on cmd", "info")
         return self.run_shell(
             "cmd", command, check=check, env=env, text=text, timeout=timeout
         )

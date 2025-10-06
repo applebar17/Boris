@@ -54,7 +54,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
         self.base_path: Path = Path(base_path)
         self.logger = logger
 
-        self._log(f"Base path CodeProject = {self.base_path}")
+        self._log(f"[code writer] Base path CodeProject = {self.base_path}")
 
         self._load_ignore_spec(cmignore_override=cmignore_override)
         self.output_path: Path = self.base_path / output_project_path
@@ -195,7 +195,9 @@ class CodeProject(LLMInterface, TerminalExecutor):
             sample = [".venv/", "node_modules/", ".git/", "__pycache__/"]
             hits = [p for p in sample if self._ignore_spec.match_file(p)]
             if hits:
-                self._log(f"Ignore spec active; sample matches: {', '.join(hits)}")
+                self._log(
+                    f"[code writer] Ignore spec active; sample matches: {', '.join(hits)}"
+                )
         except Exception:
             pass
 
@@ -651,7 +653,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
         with open(json_path, "w", encoding="utf-8") as fp:
             json.dump(data, fp, ensure_ascii=False, indent=2)
 
-        self._log(f"Project JSON saved at {json_path}")
+        self._log(f"[code writer] Project JSON saved at {json_path}")
 
         return data
 
@@ -838,9 +840,13 @@ class CodeProject(LLMInterface, TerminalExecutor):
             # Final log for partial write
             if dst is None:
                 # match original behavior of reporting under computed root
-                self._log(f"Project (partial) written under {root_dst.resolve()}")
+                self._log(
+                    f"[code writer] Project (partial) written under {root_dst.resolve()}"
+                )
             else:
-                self._log(f"Project (partial) written under {dst.resolve()}")
+                self._log(
+                    f"[code writer] Project (partial) written under {dst.resolve()}"
+                )
             return
 
         # Full-tree write
@@ -856,7 +862,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
             else:
                 write_dir(child)
 
-        self._log(f"Project written at {root_dst.resolve()}")
+        self._log(f"[code writer] Project written at {root_dst.resolve()}")
 
     def _diskfile_add_description_metadata(
         self,
@@ -910,7 +916,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
                 coding_language="unknown",
             )
 
-        self._log("Successfully described code!")
+        self._log(f"[code writer] Successfully described code!")
         return result
 
     def import_from_disk(
@@ -928,7 +934,9 @@ class CodeProject(LLMInterface, TerminalExecutor):
         """
 
         def _onerror(err):
-            self._log(f"os.walk error on {getattr(err, 'filename', '?')}: {err}")
+            self._log(
+                f"[code writer] os.walk error on {getattr(err, 'filename', '?')}: {err}"
+            )
 
         if self.root is None:
             raise ValueError("Project has no ROOT – initialise CodeProject first.")
@@ -983,12 +991,14 @@ class CodeProject(LLMInterface, TerminalExecutor):
                 node = self.retrieve_node(node_id=node_id, dump=False)
                 path_to_node[folder_path] = node
                 created.append(node.id)
-                self._log(f"Imported node (dir): {folder_path.relative_to(src)}")
+                self._log(
+                    f"[code writer] Imported node (dir): {folder_path.relative_to(src)}"
+                )
 
             # Files
             for f in files:
                 file_path = current_parent / f
-                self._log(f"Importing node (file): {file_path} ...")
+                self._log(f"[code writer] Importing node (file): {file_path} ...")
 
                 file_content: Optional[str] = None
                 if _should_read(file_path, read_code=read_code):
@@ -997,7 +1007,9 @@ class CodeProject(LLMInterface, TerminalExecutor):
                         raw = file_path.read_bytes()
                         file_content = raw.decode("utf-8", errors="ignore")
                     except Exception as e:
-                        self._log(f"Read skipped ({e.__class__.__name__}): {file_path}")
+                        self._log(
+                            f"[code writer] Read skipped ({e.__class__.__name__}): {file_path}"
+                        )
 
                 if _should_enrich(
                     file_path,
@@ -1031,7 +1043,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
                 node = self.retrieve_node(node_id=node_id, dump=False)
                 created.append(node.id)
 
-        self._log(f"Imported {len(created)} nodes from {src}")
+        self._log(f"[code writer] Imported {len(created)} nodes from {src}")
         return created
 
     def sync_with_disk(
@@ -1280,7 +1292,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
             "deleted_dirs": deleted_dirs,
             "deleted_files": deleted_files,
         }
-        self._log(f"Sync report: {report}", "debug")
+        self._log(f"[code writer] Sync report: {report}", "debug")
         return report
 
 

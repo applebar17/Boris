@@ -745,7 +745,6 @@ class LLMInterface:
         return False
 
     def _ensure_context_budget_norm(self, req: ChatRequest) -> None:
-        self._log("Ensuring context window budget.", "debug")
         model = req.model
         max_context = self._context_limit_for_model(model)
         max_output = int(req.params.get("max_tokens") or self.output_reserve_tokens)
@@ -942,10 +941,6 @@ class LLMInterface:
 
         return req
 
-    # -------------------------------------------------------------------
-    # Public API
-    # -------------------------------------------------------------------
-
     # --------------------------- protocol helpers ---------------------------
     def _protocol_arg_cls_for(self, name: Optional[str]) -> ToolArgs:
         """Return the protocol arg dataclass for a known tool name, if any."""
@@ -1092,7 +1087,7 @@ class LLMInterface:
         if not (tools_mapping and req.tools and getattr(resp, "tool_calls", None)):
             self._log("No tools requested.", "debug")
             return resp
-        self._log(resp.tool_calls)
+
         self._log(f"Model requested {len(resp.tool_calls)} tool call(s).", "info")
         return self.handle_tool_calling(
             req, resp.tool_calls, tools_mapping, _state=_state

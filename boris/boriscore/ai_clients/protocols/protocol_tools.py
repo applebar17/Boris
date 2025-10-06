@@ -2,12 +2,8 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal, Union
 import json
-from datetime import datetime
-
-# If you want to aggregate audits later, import from step 3:
-# from dataclasses_runtime import JsonSalvageAudit
 
 # ---------------------- core enums ----------------------
 
@@ -51,102 +47,134 @@ class NodeMeta:
     updated_at: Optional[str] = None  # ISO-8601
 
 
-# ---------------------- tool arg schemas ----------------------
-
-
-@dataclass
-class UpdateNodeArgs:
-    """
-    Input for an 'update_node' tool.
-    You can pass any subset; the tool applies only provided fields.
-    """
-
-    node_id: Optional[str] = None
-    name: Optional[str] = None  # rename file/folder
-    description: Optional[str] = None
-    scope: Optional[str] = None
-    language: Optional[str] = None
-    commit_message: Optional[str] = None
-    # Move:
-    new_parent_id: Optional[str] = None
-    position: Optional[int] = None  # index within parent children
-
-    @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "UpdateNodeArgs":
-        return UpdateNodeArgs(
-            node_id=d.get("node_id"),
-            name=d.get("name"),
-            description=d.get("description"),
-            scope=d.get("scope"),
-            language=d.get("language"),
-            commit_message=d.get("commit_message"),
-            new_parent_id=d.get("new_parent_id") or d.get("move_to_parent_id"),
-            position=d.get("position"),
-        )
+# ---------------------- tool arg schemas (aligned with your JSON tools) ----------------------
+#
+# NOTE: These match the latest tool dictionaries you provided:
+# - RETRIEVE_NODE: node_id
+# - CREATE_NODE: parent_id, name, is_file, description, scope, language, commit_message, code
+# - UPDATE_NODE: node_id, new_name, description, scope, language, commit_message, new_parent_id, updated_file
+# - DELETE_NODE: node_id, cascade, promote_children
+# - RUN_TERMINAL_COMMANDS: shell, command, timeout, workdir, check, env
+# - INVOKE_AI_AGENT: (no parameters)
+#
 
 
 @dataclass
 class RetrieveNodeArgs:
     node_id: str
-    dump: bool = True
-    return_content: bool = False
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "RetrieveNodeArgs":
-        return RetrieveNodeArgs(
-            node_id=str(d["node_id"]),
-            dump=bool(d.get("dump", True)),
-            return_content=bool(d.get("return_content", False)),
-        )
+        return RetrieveNodeArgs(node_id=str(d["node_id"]))
 
 
 @dataclass
 class CreateNodeArgs:
-    parent_id: str
-    name: str
-    kind: NodeKind
-    language: Optional[str] = None
+    # In your JSON schema these are all required, but each may be null; we keep them Optional in Python.
+    parent_id: Optional[str] = None
+    name: Optional[str] = None
+    is_file: Optional[bool] = None
     description: Optional[str] = None
-    content: Optional[str] = None  # for files
+    scope: Optional[str] = None
+    language: Optional[str] = None
+    commit_message: Optional[str] = None
+    code: Optional[str] = None  # file content when is_file is True
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "CreateNodeArgs":
         return CreateNodeArgs(
-            parent_id=str(d["parent_id"]),
-            name=str(d["name"]),
-            kind=NodeKind(d["kind"]),
-            language=d.get("language"),
+            parent_id=d.get("parent_id"),
+            name=d.get("name"),
+            is_file=d.get("is_file"),
             description=d.get("description"),
-            content=d.get("content"),
+            scope=d.get("scope"),
+            language=d.get("language"),
+            commit_message=d.get("commit_message"),
+            code=d.get("code"),
+        )
+
+
+@dataclass
+class UpdateNodeArgs:
+    """
+    Input for 'update_node' tool.
+    Mirrors your current schema: rename via 'new_name', move via 'new_parent_id',
+    and full-file content via 'updated_file'.
+    """
+
+    node_id: Optional[str] = None
+    new_name: Optional[str] = None  # rename file/folder
+    description: Optional[str] = None
+    scope: Optional[str] = None
+    language: Optional[str] = None
+    commit_message: Optional[str] = None
+    new_parent_id: Optional[str] = None
+    updated_file: Optional[str] = None  # whole file contents
+
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> "UpdateNodeArgs":
+        return UpdateNodeArgs(
+            node_id=d.get("node_id"),
+            new_name=d.get("new_name"),
+            description=d.get("description"),
+            scope=d.get("scope"),
+            language=d.get("language"),
+            commit_message=d.get("commit_message"),
+            new_parent_id=d.get("new_parent_id"),
+            updated_file=d.get("updated_file"),
         )
 
 
 @dataclass
 class DeleteNodeArgs:
-    node_id: str
-    commit_message: Optional[str] = None
+    node_id: Optional[str] = None
+    cascade: Optional[bool] = None
+    promote_children: Optional[bool] = None
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "DeleteNodeArgs":
         return DeleteNodeArgs(
-            node_id=str(d["node_id"]),
-            commit_message=d.get("commit_message"),
+            node_id=d.get("node_id"),
+            cascade=d.get("cascade"),
+            promote_children=d.get("promote_children"),
+        )
+
+
+ShellLiteral = Literal["bash", "pwsh", "powershell", "cmd"]
+
+
+@dataclass
+class RunTerminalCommandsArgs:
+    shell: ShellLiteral
+    # Your JSON says "string | object"; description mentions "argv array".
+    # We accept str | List[str] | Dict[str, Any] to be flexible.
+    command: Union[str, List[str], Dict[str, Any]]
+    timeout: Optional[float] = None
+    workdir: Optional[str] = None
+    check: Optional[bool] = None
+    env: Optional[Dict[str, str]] = None
+
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> "RunTerminalCommandsArgs":
+        cmd = d.get("command")
+        # Accept both array-like and dict-like; leave as-is for adapter to handle.
+        return RunTerminalCommandsArgs(
+            shell=d.get("shell"),
+            command=cmd,
+            timeout=d.get("timeout"),
+            workdir=d.get("workdir"),
+            check=d.get("check"),
+            env=d.get("env"),
         )
 
 
 @dataclass
-class MoveNodeArgs:
-    node_id: str
-    new_parent_id: str
-    position: Optional[int] = None
+class InvokeAIAgentArgs:
+    """Empty schema in your tool definition."""
 
     @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "MoveNodeArgs":
-        return MoveNodeArgs(
-            node_id=str(d["node_id"]),
-            new_parent_id=str(d["new_parent_id"]),
-            position=d.get("position"),
-        )
+    def from_dict(_: Dict[str, Any]) -> "InvokeAIAgentArgs":
+        return InvokeAIAgentArgs()
 
 
 # ---------------------- tool result schemas ----------------------
@@ -197,7 +225,7 @@ class UpdateNodeResult(ToolResultBase):
 class RetrieveNodeResult(ToolResultBase):
     node: Optional[ProjectNodeRef] = None
     meta: Optional[NodeMeta] = None
-    content: Optional[str] = None  # file content if return_content=True
+    content: Optional[str] = None  # keep for forward compat if your backend returns it
 
 
 @dataclass
@@ -211,11 +239,13 @@ class DeleteNodeResult(ToolResultBase):
     node: Optional[ProjectNodeRef] = None
 
 
+# (Optional) Result for terminal commands if your executor returns these fields
 @dataclass
-class MoveNodeResult(ToolResultBase):
-    node: Optional[ProjectNodeRef] = None
-    new_parent_id: Optional[str] = None
-    position: Optional[int] = None
+class RunTerminalCommandsResult(ToolResultBase):
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+    exit_code: Optional[int] = None
+    duration_ms: Optional[int] = None
 
 
 # ---------------------- invocation record (for tracing) ----------------------

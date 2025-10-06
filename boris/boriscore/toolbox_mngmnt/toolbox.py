@@ -1,6 +1,8 @@
-RETRIEVE_NODE = {
-    "type": "function",
-    "function": {
+from boris.boriscore.ai_clients.protocols.protocol_chat import ToolSpec
+
+RETRIEVE_NODE = ToolSpec(
+    type="function",
+    function={
         "name": "retrieve_node",
         "description": "Return every stored field of a project node (file or folder) so the caller can inspect its metadata and position before deciding to modify or relocate it.",
         "strict": True,
@@ -16,11 +18,11 @@ RETRIEVE_NODE = {
             "additionalProperties": False,
         },
     },
-}
+)
 
-CREATE_NODE = {
-    "type": "function",
-    "function": {
+CREATE_NODE = ToolSpec(
+    type="function",
+    function={
         "name": "create_node",
         "description": 'Create a new folder or file in the project tree. If the tree is empty this call can also create the root (use code "ROOT"). Placement among siblings is controlled by *position*; omitting it appends to the end of the parent’s children list. Every combination of *parent_id* and *name* must be unique. If you create an empty file, mention that in the description. You CAN\'T use as parent_id a file, only a folder.',
         "strict": True,
@@ -73,11 +75,11 @@ CREATE_NODE = {
             "additionalProperties": False,
         },
     },
-}
+)
 
-UPDATE_NODE = {
-    "type": "function",
-    "function": {
+UPDATE_NODE = ToolSpec(
+    type="function",
+    function={
         "name": "update_node",
         "description": "Update metadata (name, description, scope, language, commit message) and/or move a node to a new parent/position. Moving the root is not allowed and cycles are prevented automatically.",
         "strict": True,
@@ -130,11 +132,11 @@ UPDATE_NODE = {
             "additionalProperties": False,
         },
     },
-}
+)
 
-DELETE_NODE = {
-    "type": "function",
-    "function": {
+DELETE_NODE = ToolSpec(
+    type="function",
+    function={
         "name": "delete_node",
         "description": "Delete a node. If *cascade* is True, all descendants are removed; otherwise *promote_children* must be True to pull children up one level.",
         "strict": True,
@@ -158,11 +160,11 @@ DELETE_NODE = {
             "additionalProperties": False,
         },
     },
-}
+)
 
-RUN_TERMINAL_COMMANDS = {
-    "type": "function",
-    "function": {
+RUN_TERMINAL_COMMANDS = ToolSpec(
+    type="function",
+    function={
         "name": "run_terminal_commands",
         "description": "Run a single or multiple terminal commands in the project workspace. Use for read-only inspection (ls/cat/grep/git status), linting, or quick checks. Destructive commands may be blocked by safe_mode. You will be running these commands from the root of the project: be careful in navigating the directories beforehand.",
         "strict": True,
@@ -204,11 +206,11 @@ RUN_TERMINAL_COMMANDS = {
             "additionalProperties": False,
         },
     },
-}
+)
 
-INVOKE_AI_AGENT = {
-    "type": "function",
-    "function": {
+INVOKE_AI_AGENT = ToolSpec(
+    type="function",
+    function={
         "name": "invoke_ai_coding_assistant",
         "description": "Call an agent able of creating / updating / retrieving / deleting coding files out of a user request. It will summarize to you the final process output. It can as well run terminal commands.",
         "strict": True,
@@ -219,4 +221,4 @@ INVOKE_AI_AGENT = {
             "additionalProperties": False,
         },
     },
-}
+)

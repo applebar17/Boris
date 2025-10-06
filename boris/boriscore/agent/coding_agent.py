@@ -28,7 +28,7 @@ from boris.boriscore.agent.models import (
     ActionPlanningOutput,
     Operation,
 )
-from boris.boriscore.ai_clients.protocols.protocol_chat import OpenaiApiCallReturnModel
+from boris.boriscore.ai_clients.protocols.protocol_chat import ChatResponse
 from boris.boriscore.agent.utils import (
     _join_outputs_for_summary,
     _actions_outline_for_summary,
@@ -207,7 +207,7 @@ class CodeWriter(CodeProject):
 
     def _select_tools_for_operation(
         self, op: Operation
-    ) -> Tuple[List[dict], List[str], Dict[str, Any]]:
+    ) -> Tuple[List[dict], List[str], Dict[str, partial]]:
         """
         Given an operation, intersect desired tool names with what the toolbox actually defines,
         and also filter the instance's tools_mapping down to the selected names.
@@ -223,7 +223,9 @@ class CodeWriter(CodeProject):
 
         # Filter the mapping to only what we'll send
         filtered_mapping = {
-            k: v for k, v in self.code_writer_tools_mapping.items() if k in names
+            k: partial(v)
+            for k, v in self.code_writer_tools_mapping.items()
+            if k in names
         }
 
         # Helpful logs
@@ -316,10 +318,8 @@ class CodeWriter(CodeProject):
             model=model or getattr(self, "llm_model", None),
             user=user,
         )
-        out: OpenaiApiCallReturnModel = self.call_openai(
-            params=params, tools_mapping=None, init_tool_counter=True
-        )
-        return out.message_content
+        out: ChatResponse = self.call(params=params, tools_mapping=None)
+        return out.message.content
 
     # -------------------- agent pipelines --------------------
 
@@ -375,19 +375,17 @@ class CodeWriter(CodeProject):
         }
 
         # Call the LLM; allow it to iteratively retrieve
-        result = self.call_openai(
-            params=params, tools_mapping=tools_mapping, init_tool_counter=True
-        )
+        result: ChatResponse = self.call(req=params, tools_mapping=tools_mapping)
 
         parsed: ActionPlanningOutput
-        if isinstance(result.message_content, dict):
-            parsed = ActionPlanningOutput(**result.message_content)
+        if isinstance(result.message.content, dict):
+            parsed = ActionPlanningOutput(**result.message.content)
         else:
-            parsed = ActionPlanningOutput(**json.loads(result.message_content))
+            parsed = ActionPlanningOutput(**json.loads(result.message.content))
 
         return parsed
 
-    @traceable
+    # @traceable
     def reasoning_step(
         self, chat_message: Union[str, list], user: Optional[str] = None
     ) -> ReasoningPlan:
@@ -396,6 +394,7 @@ class CodeWriter(CodeProject):
         # uses CodeProject._emit → will go to CLI sink if present
         self._emit("reasoning...")
         project_structure = self.get_tree_structure(description=True)
+        reasoning_model = getattr(self, "model_reasoning", None) or self.llm_model
 
         # Normalize chat_messages to a list
         if isinstance(chat_message, list):
@@ -408,36 +407,38 @@ class CodeWriter(CodeProject):
             raise ValueError("Unrecognized chat history/message structure.")
 
         available_tools = self.build_tool_blurb()
+        self._log(f"Reasoning model: {reasoning_model}", "debug")
+
+        tools = [self.code_writer_toolbox.get("retrieve_node")]
         params = self.handle_params(
             system_prompt=REASONING.format(
                 project_structure=project_structure,
                 available_tools=available_tools,
             ),
             chat_messages=chat_messages,
-            model=getattr(self, "model_reasoning", None) or self.llm_model,
+            model=reasoning_model,
             temperature=None,
             response_format=ReasoningPlan,  # ask client to parse if it supports it
             user=user,
-            tools=[self.code_writer_toolbox.get("retrieve_node")],
+            tools=tools,
         )
 
         try:
-            result: OpenaiApiCallReturnModel = self.call_openai(
-                params=params,
+            result: ChatResponse = self.call(
+                req=params,
                 tools_mapping={
                     "retrieve_node": partial(
                         self.retrieve_node, return_content=True, to_emit=True
                     )
                 },
-                init_tool_counter=True,
             )
 
             # Some clients return parsed obj when response_format is used; else it's a JSON string.
             parsed: ReasoningPlan
-            if isinstance(result.message_content, dict):
-                parsed = ReasoningPlan(**result.message_content)
+            if isinstance(result.message.content, dict):
+                parsed = ReasoningPlan(**result.message.content)
             else:
-                parsed = ReasoningPlan(**json.loads(result.message_content))
+                parsed = ReasoningPlan(**json.loads(result.message.content))
 
             self._log(
                 "Planned actions:\n"
@@ -530,10 +531,11 @@ class CodeWriter(CodeProject):
                 user=user,
             )
             self._log(f"Entering Coder flow for user: {user}")
-            output: OpenaiApiCallReturnModel = self.call_openai(
-                params=params, tools_mapping=filtered_mapping, init_tool_counter=True
+            output: ChatResponse = self.call(
+                params=params,
+                tools_mapping=filtered_mapping,
             )
-            output_messages.append(output.message_content)
+            output_messages.append(output.message.content)
 
             # 7) Optionally write to disk after each action
             if write_to_disk:

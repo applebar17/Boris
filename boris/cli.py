@@ -9,7 +9,7 @@ from rich.panel import Panel
 from boris.config import Settings
 from boris.app import run_chat
 from boris.logging_config import setup_logging, add_console_tap
-from boris.boriscore.ai_clients.ai_clients import ClientOAI
+from boris.boriscore.ai_clients.llm_core import LLMInterface
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 ai = typer.Typer(
@@ -182,9 +182,9 @@ def ai_show():
         f"[bold]Global .env[/]: {path_global} {'(exists)' if path_global.exists() else '(missing)'}",
     ]
 
-    if ClientOAI is not None:
+    if LLMInterface is not None:
         try:
-            client = ClientOAI(
+            client = LLMInterface(
                 base_path=Path.cwd(), logger=logging.getLogger("boris.ai")
             )
             lines.append(f"[bold]Provider[/]: {client.provider}")
@@ -222,7 +222,7 @@ def init_config(
 @ai.command("test")
 def ai_test():
     """Test Boris AI connectivity."""
-    if ClientOAI is None:
+    if LLMInterface is None:
         _console.print(
             Panel.fit(
                 "[red]Client not importable[/]. Ensure dependencies are installed.",
@@ -232,14 +232,14 @@ def ai_test():
         raise typer.Exit(code=1)
     try:
         logger = logging.getLogger("boris.ai")
-        client = ClientOAI(base_path=Path.cwd(), logger=logger)
+        client = LLMInterface(base_path=Path.cwd(), logger=logger)
         params = client.handle_params(
             system_prompt="You are a ping model.",
             chat_messages="Reply with 'pong'.",
             model_kind="chat",
             temperature=0.0,
         )
-        result = client.call_openai(params=params, tools_mapping=None)
+        result = client.call(req=params, tools_mapping=None)
         msg = str(getattr(result, "message_content", "")).strip() or "<no content>"
         _console.print(
             Panel.fit(

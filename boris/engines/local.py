@@ -9,7 +9,7 @@ from boris.engines.toolbox import TOOLBOX
 from boris.boriscore.code_structurer.code_manager import CodeProject
 from boris.boriscore.agent.coding_agent import CodeWriter
 from boris.engines.prompts import CHATBOT
-from boris.boriscore.ai_clients.protocols.protocol_chat import OpenaiApiCallReturnModel
+from boris.boriscore.ai_clients.protocols.protocol_chat import ChatResponse
 from boris.boriscore.utils.snapshots import (
     load_path as _snap_load_path,
     save as _snap_save,
@@ -148,8 +148,8 @@ class LocalEngine:
             "retrieve_node": partial(
                 self.cw.retrieve_node, return_content=True, to_emit=True
             ),
-            "run_terminal_commands": self.cw.run_terminal_tool,
-            "delete_node": self.cw.delete_node,
+            "run_terminal_commands": partial(self.cw.run_terminal_tool),
+            "delete_node": partial(self.cw.delete_node),
         }
 
         self.logger.debug("Chat turn (user=%s, messages=%d)", user, len(history))
@@ -168,8 +168,8 @@ class LocalEngine:
             user=user,
             parallel_tool_calls=False,
         )
-        answer_obj: OpenaiApiCallReturnModel = self.cw.call_openai(
-            params=params, tools_mapping=chatbot_tools_mapping, init_tool_counter=True
+        answer_obj: ChatResponse = self.cw.call(
+            req=params, tools_mapping=chatbot_tools_mapping
         )
 
         # Optionally: persist changes to disk (out of scope for now).
@@ -191,6 +191,6 @@ class LocalEngine:
         except Exception as e:
             self.logger.warning("Snapshot save failed: %s", e)
 
-        answer_text = answer_obj.message_content
+        answer_text = answer_obj.message.content
         self.logger.debug("Answer len=%d", len(answer_text))
         return {"answer": answer_text, "project": wrapper["project"]}

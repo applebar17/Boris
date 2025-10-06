@@ -16,9 +16,13 @@ from boris.boriscore.code_structurer.utils import (
     _should_enrich,
     _should_read,
 )
+from boris.boriscore.ai_clients.protocols.protocol_chat import (
+    ApiCallReturnModel,
+    ChatResponse,
+)
 from boris.boriscore.code_structurer.code_nodes import ProjectNode
 from boris.boriscore.terminal.terminal_interface import TerminalExecutor
-from boris.boriscore.ai_clients.ai_clients import ClientOAI, OpenaiApiCallReturnModel
+from boris.boriscore.ai_clients.llm_core import LLMInterface
 from boris.boriscore.code_structurer.prompts import (
     CODE_GEN_SYS_PROMPT,
     FILEDISK_DESCRIPTION_METADATA,
@@ -28,7 +32,7 @@ from boris.boriscore.code_structurer.models import FileDiskMetadata, Code
 from boris.boriscore.utils.resources import load_ignore_patterns
 
 
-class CodeProject(ClientOAI, TerminalExecutor):
+class CodeProject(LLMInterface, TerminalExecutor):
     """Manages an in‑memory representation of a source‑code project.
 
     Similar to *RemediationTemplate* for legal clauses, this class supports
@@ -889,8 +893,8 @@ class CodeProject(ClientOAI, TerminalExecutor):
             max_tokens=100,
         )
 
-        code_description_output: OpenaiApiCallReturnModel = self.call_openai(
-            params=params, tools_mapping=None
+        code_description_output: ChatResponse = self.call(
+            req=params, tools_mapping=None
         )
 
         # Some backends already return structured objects. If not, parse JSON.
@@ -1184,6 +1188,15 @@ class CodeProject(ClientOAI, TerminalExecutor):
                             node.code = new_content
                             updated_files += 1
                             self._emit("user updated node", file_path)
+
+                    if node.id != self._generate_node_id(
+                        parent=node.parent, filename=node.name
+                    ):
+                        self.update_node(
+                            node_id=node.id,
+                            new_name=node.name,
+                            new_parent_id=node.parent,
+                        )
 
         # Handle removed files/folders (model-only deletion)
         if remove_missing:

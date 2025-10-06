@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 from collections import Counter
 import json
-from boris.boriscore.ai_clients.llm_core import ClientOAI
+from boris.boriscore.ai_clients.llm_core import LLMInterface
 
 # If these defaults already exist in your codebase, import them instead.
 DEFAULT_TOOL_DISABLE_MARGIN_TOKENS = globals().get(
@@ -153,7 +153,7 @@ class ClientConfigSnapshot:
 # ---------------------- snapshot builders ----------------------
 
 
-def snapshot_from_client(client: "ClientOAI") -> ClientConfigSnapshot:
+def snapshot_from_client(client: "LLMInterface") -> ClientConfigSnapshot:
     """
     Build a config snapshot from a live ClientOAI-like object
     without mutating it. This only *reads* the attributes your
@@ -233,7 +233,7 @@ def snapshot_from_client(client: "ClientOAI") -> ClientConfigSnapshot:
     )
 
 
-def snapshot_tool_state_from_client(client: "ClientOAI") -> ToolState:
+def snapshot_tool_state_from_client(client: "LLMInterface") -> ToolState:
     """
     Convert the client's internal tool state to a serializable ToolState.
     """

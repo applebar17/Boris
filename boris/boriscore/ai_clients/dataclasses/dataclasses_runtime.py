@@ -7,7 +7,7 @@ from enum import Enum
 from collections import Counter
 import json
 
-from boris.boriscore.ai_clients.llm_core import ClientOAI
+from boris.boriscore.ai_clients.llm_core import LLMInterface
 
 # ---------------------- enums ----------------------
 
@@ -104,7 +104,9 @@ def _msg_content(m: Any) -> Any:
     return c
 
 
-def _count_tokens_messages(client: "ClientOAI", messages: List[Any], model: str) -> int:
+def _count_tokens_messages(
+    client: "LLMInterface", messages: List[Any], model: str
+) -> int:
     return client._count_tokens_messages(messages, model)
 
 
@@ -114,7 +116,7 @@ def _copy_messages(messages: List[Any]) -> List[Any]:
 
 
 def ensure_context_budget_with_audit(
-    client: "ClientOAI",
+    client: "LLMInterface",
     params: Dict[str, Any],
     *,
     apply: bool = True,
@@ -244,7 +246,7 @@ def ensure_context_budget_with_audit(
 
 
 def parse_json_args_with_audit(
-    client: "ClientOAI",
+    client: "LLMInterface",
     s: Optional[str],
     *,
     fn_name: Optional[str] = None,

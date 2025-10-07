@@ -6,8 +6,8 @@ from functools import partial
 from langsmith import traceable
 from boris.boriscore.utils.utils import log_msg, load_toolbox
 from boris.engines.toolbox import TOOLBOX
-from boris.boriscore.code_structurer.code_manager import CodeProject
-from boris.boriscore.agent.coding_agent import CodeWriter
+from boris.boriscore.code.code_manager.disk_manager import DiskManager
+from boris.boriscore.agent.coding_agent import CodingAgent
 from boris.engines.prompts import CHATBOT
 from boris.boriscore.ai_clients.protocols.protocol_chat import ChatResponse
 from boris.boriscore.utils.snapshots import (
@@ -39,7 +39,7 @@ class LocalEngine:
         self.last_sync_report: dict | None = None
 
         # Create CodeWriter with its own child
-        self.cw = CodeWriter(
+        self.ca = CodingAgent(
             logger=self.logger.getChild("codewriter"),
             init_root=True,
             base_path=self.base,
@@ -62,7 +62,7 @@ class LocalEngine:
         Attach a UI sink for CRUD events to the CodeWriter (which inherits CodeProject).
         """
         try:
-            self.cw.on_event = on_event
+            self.ca.on_event = on_event
         except Exception:
             # best-effort; keep engine resilient
             pass
@@ -83,21 +83,21 @@ class LocalEngine:
         snap_path = _snap_load_path(self.base)
         if snap_path:
             self.logger.info("Loading cached project snapshot: %s", snap_path)
-            cp = CodeProject.from_json(
+            dm = DiskManager.from_json(
                 json_path=snap_path,
                 base_path=self.base,
                 logger=self.logger.getChild("codeproject"),
             )
         else:
-            cp = CodeProject(
+            dm = DiskManager(
                 init_root=True,
                 base_path=self.base,
                 logger=self.logger.getChild("codeproject"),
             )
-            cp.root.name = self.base.name
+            dm.root.name = self.base.name
 
         # 2) Merge current disk state (read-only, in-memory changes)
-        report = cp.sync_with_disk(
+        report = DiskManager.sync_with_disk(
             src=self.base,
             read_code=True,
             ai_enrichment_metadata_pipe=True,
@@ -107,16 +107,16 @@ class LocalEngine:
         self.logger.debug("Sync report: %s", report)
 
         # Hand over tree to the CodeWriter
-        self.cw.root = cp.root
+        self.ca.root = dm.root
         try:
             # keep ids index consistent with the loaded tree
-            self.cw.ids = set(cp._collect_ids(cp.root))  # type: ignore[attr-defined]
+            self.ca.ids = set(dm._collect_ids(dm.root))  # type: ignore[attr-defined]
         except Exception:
             pass
 
         # 3) Save updated snapshot (user data dir)
         try:
-            _snap_save(self.base, cp.to_dict())
+            _snap_save(self.base, dm.to_dict())
         except Exception as e:
             self.logger.warning("Snapshot save failed: %s", e)
 
@@ -138,27 +138,27 @@ class LocalEngine:
               - "project" is a JSON-serializable snapshot of the current CodeProject
         """
         # Ensure a root exists (defensive; should be set by _bootstrap_project_tree)
-        if self.cw.root is None:
+        if self.ca.root is None:
             self._bootstrap_project_tree()
 
         chatbot_tools_mapping = {
             "invoke_ai_coding_assistant": partial(
-                self.cw.invoke_agent, chat_history=history, user=user
+                self.ca.invoke_agent, chat_history=history, user=user
             ),
             "retrieve_node": partial(
-                self.cw.retrieve_node, return_content=True, to_emit=True
+                self.ca.retrieve_node, return_content=True, to_emit=True
             ),
-            "run_terminal_commands": partial(self.cw.run_terminal_tool),
-            "delete_node": partial(self.cw.delete_node),
+            "run_terminal_commands": partial(self.ca.run_terminal_tool),
+            "delete_node": partial(self.ca.delete_node),
         }
 
         self.logger.debug("Chat turn (user=%s, messages=%d)", user, len(history))
-        params = self.cw.handle_params(
+        params = self.ca.handle_params(
             system_prompt=CHATBOT.format(
-                project_structure=self.cw.get_tree_structure(description=True)
+                project_structure=self.ca.get_tree_structure(description=True)
             ),
             chat_messages=history,
-            model=getattr(self.cw, "llm_model", "gpt-4o-mini"),
+            model=getattr(self.ca, "llm_model", "gpt-4o-mini"),
             temperature=0.5,
             tools=[
                 tool
@@ -168,23 +168,18 @@ class LocalEngine:
             user=user,
             parallel_tool_calls=False,
         )
-        answer_obj: ChatResponse = self.cw.call(
+        answer_obj: ChatResponse = self.ca.call(
             req=params, tools_mapping=chatbot_tools_mapping
         )
 
-        # Optionally: persist changes to disk (out of scope for now).
-        # If your CodeWriter mutates self.cw.root (e.g., writes/edits files),
-        # you can mirror that to the filesystem here. For now we just return
-        # the current in-memory structure.
-
         # Serialize current project tree
-        cp = CodeProject(
+        dm = DiskManager(
             init_root=False,
             base_path=self.base,
             logger=self.logger.getChild("codeproject"),
         )
-        cp.root = self.cw.root
-        wrapper = cp.to_dict()
+        dm.root = self.ca.root
+        wrapper = dm.to_dict()
 
         try:
             _snap_save(self.base, wrapper)

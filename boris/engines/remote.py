@@ -4,11 +4,14 @@ import pathlib
 import logging
 from typing import Optional, Union
 
-from boris.boriscore.agent.coding_agent import CodeWriter
-from boris.boriscore.code_structurer.code_manager import CodeProject
+from boris.boriscore.agent.coding_agent import CodingAgent
+from boris.boriscore.code.code_manager.disk_manager import DiskManager
 from boris.boriscore.utils.utils import load_toolbox
 
 
+###########################################
+######### TO BE IMPLEMENTED YET ###########
+###########################################
 class RemoteEngine:
 
     def __init__(
@@ -26,8 +29,8 @@ class RemoteEngine:
         self.logger.info("Init LocalEngine at base=%s", self.base)
 
         # Create CodeWriter with its own child
-        self.cw = CodeWriter(
-            logger=self.logger.getChild("codewriter"),
+        self.cw = CodingAgent(
+            logger=self.logger.getChild("diskmanager"),
             init_root=True,
             base_path=self.base,
         )
@@ -64,18 +67,18 @@ class RemoteEngine:
         """
         # TODO: REPLACE this stub with your actual pipeline that scans the repo and builds the tree.
         self.logger.info("Bootstrapping project tree from %s", self.base)
-        cp = CodeProject(
+        dm = DiskManager(
             init_root=True,
             base_path=self.base,
-            logger=self.logger.getChild("codeproject"),
+            logger=self.logger.getChild("diskmanager"),
         )
-        cp.root.name = self.base.name
-        cp.import_from_disk(src=self.base)
-        self.cw.root = cp.root
+        dm.root.name = self.base.name
+        dm.import_from_disk(src=self.base)
+        self.cw.root = dm.root
 
     def set_event_sink(self, on_event) -> None:
         """
-        Attach a UI sink for CRUD events to the CodeWriter (which inherits CodeProject).
+        Attach a UI sink for CRUD events to the DiskManager (which inherits CodeProject).
         """
         try:
             self.cw.on_event = on_event

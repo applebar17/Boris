@@ -27,10 +27,7 @@ try:
 except Exception:  # pragma: no cover - tracing is optional
     wrap_openai = None  # type: ignore
 
-from boris.boriscore.ai_clients.providers.registry import (
-    resolve_model,
-    canonicalize_provider,
-)
+from boris.boriscore.ai_clients.dataclasses.dataclasses_config import Provider
 from boris.boriscore.ai_clients.protocols.protocol_chat import (
     Msg,
     ChatRequest,
@@ -49,7 +46,7 @@ from boris.boriscore.ai_clients.providers.registry import (
     Adapters,
 )
 from boris.boriscore.utils.utils import log_msg
-from boris.boriscore.ai_clients.utils import (
+from boris.boriscore.ai_clients.utils.utils import (
     _close_stack,
     _extract_top_level_json,
     _sanitize_json_candidate,
@@ -125,6 +122,7 @@ class LLMInterface:
         max_tokens_per_message_ratio: Optional[
             float
         ] = DEFAULT_TOOL_MESSAGE_TOKEN_RATIO,
+        provider: Provider = None,
         *args,
         **kwargs,
     ) -> None:
@@ -137,6 +135,7 @@ class LLMInterface:
         """
         self.logger = logger
         self.base_path = Path(base_path)
+        self.provider = provider
         self._log(f"Base path ClientOAI = {self.base_path}")
 
         # Load local .env if present
@@ -152,7 +151,6 @@ class LLMInterface:
 
         # then read variables from the (now merged) environment
         self._load_env_vars()
-
         self._provider_adapter: "Adapters" = get_adapter(
             self.provider, logger=self.logger
         )
@@ -222,41 +220,58 @@ class LLMInterface:
             )
 
     def _load_env_vars(self) -> None:
-        # --- Provider & auth ---
-        provider_raw = os.getenv("BORIS_OAI_PROVIDER", "").strip().lower()
+        # -------- explicit provider (two env names supported) --------
+        provider_raw = (
+            (os.getenv("BORIS_LLM_PROVIDER") or os.getenv("BORIS_OAI_PROVIDER") or "")
+            .strip()
+            .lower()
+        )
 
-        # Prefer explicit provider; else infer:
-        # 1) Azure if endpoint present; 2) Anthropic if ANTHROPIC_API_KEY; 3) OpenAI fallback.
-        # TODO: improve for gemini, etc...
-        inferred = (
-            "azure"
-            if _clean_val(
-                os.getenv("BORIS_AZURE_OPENAI_ENDPOINT")
-                or os.getenv("AZURE_OPENAI_ENDPOINT")
-            )
-            else (
-                "anthropic"
-                if _clean_val(
-                    os.getenv("ANTHROPIC_API_KEY")
-                    or os.getenv("BORIS_ANTHROPIC_API_KEY")
-                )
-                else "openai"
-            )
-        )
-        self.provider: str = provider_raw or inferred
-
-        # --- Anthropic (Claude) ---
-        self.anthropic_api_key: Optional[str] = _clean_val(
-            os.getenv("BORIS_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
-        )
-        self.anthropic_base_url: Optional[str] = _clean_val(
-            os.getenv("BORIS_ANTHROPIC_BASE_URL") or os.getenv("ANTHROPIC_BASE_URL")
-        )
-        # --- Azure (OpenAI) ---
-        self.azure_endpoint: Optional[str] = _clean_val(
+        # -------- probe for inference --------
+        azure_endpoint = _clean_val(
             os.getenv("BORIS_AZURE_OPENAI_ENDPOINT")
             or os.getenv("AZURE_OPENAI_ENDPOINT")
         )
+        anthropic_key = _clean_val(
+            os.getenv("BORIS_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        )
+        # Google/Gemini
+        google_key = _clean_val(
+            os.getenv("BORIS_GOOGLE_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
+            or os.getenv("GEMINI_API_KEY")
+        )
+        openai_key = _clean_val(
+            os.getenv("BORIS_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        )
+
+        inferred = (
+            "azure"
+            if azure_endpoint
+            else (
+                "anthropic"
+                if anthropic_key
+                else (
+                    "gemini" if google_key else ("openai" if openai_key else "openai")
+                )
+            )
+        )
+
+        # If self.provider was set in __init__, respect it; else use env/inference.
+        if not getattr(self, "provider", None):
+            self.provider = canonicalize_provider(provider_raw or inferred)
+        else:
+            self.provider = canonicalize_provider(self.provider)
+
+        # -------- auth & base URLs (set all; you may ignore non-selected provider attrs elsewhere) --------
+        # Anthropic
+        self.anthropic_api_key: Optional[str] = anthropic_key
+        self.anthropic_base_url: Optional[str] = _clean_val(
+            os.getenv("BORIS_ANTHROPIC_BASE_URL") or os.getenv("ANTHROPIC_BASE_URL")
+        )
+
+        # Azure OpenAI
+        self.azure_endpoint: Optional[str] = azure_endpoint
         self.azure_api_key: Optional[str] = _clean_val(
             os.getenv("BORIS_AZURE_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
         )
@@ -266,45 +281,48 @@ class LLMInterface:
             or "2025-04-01-preview"
         )
 
-        self.openai_api_key: Optional[str] = _clean_val(
-            os.getenv("BORIS_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        )
+        # OpenAI
+        self.openai_api_key: Optional[str] = openai_key
         self.openai_base_url: Optional[str] = _clean_val(
             os.getenv("BORIS_OPENAI_BASE_URL")
             or os.getenv("OPENAI_BASE_URL")
             or os.getenv("OPENAI_API_BASE")
         )
 
+        # Gemini / Google
+        self.google_api_key: Optional[str] = google_key
+        self.google_base_url: Optional[str] = _clean_val(
+            os.getenv("BORIS_GOOGLE_BASE_URL")
+            or os.getenv("GOOGLE_BASE_URL")
+            or os.getenv("GEMINI_BASE_URL")
+        )
+
         self._log(f"Provider resolved to: {self.provider}", "debug")
 
-        # --- Models ---
+        # -------- model envs (provider-agnostic names) --------
+        # Keep these as raw env overrides. Final selection is done by resolve_model().
         self.model_chat: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_CHAT")
+            or os.getenv("OPENAI_MODEL_CHAT")  # legacy
             or os.getenv("AZURE_OPENAI_DEPLOYMENT_4O_MINI")  # legacy
-            or os.getenv("OPENAI_MODEL_CHAT")
-            or (
-                "gpt-4o-mini" if self.provider == "openai" else None
-            )  # safe default only for OpenAI
         )
-
         self.model_coding: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_CODING")
-            or os.getenv("OPENAI_MODEL_CODING")
+            or os.getenv("OPENAI_MODEL_CODING")  # legacy
             or self.model_chat
         )
-
         self.model_reasoning: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_REASONING")
+            or os.getenv("OPENAI_MODEL_REASONING")  # legacy
             or os.getenv("AZURE_OPENAI_DEPLOYMENT_o3_MINI")  # legacy
-            or os.getenv("OPENAI_MODEL_REASONING")
             or self.model_chat
         )
 
         # Back-compat alias
         self.llm_model: Optional[str] = self.model_chat
-        self.tracing: bool = bool(
-            os.getenv("BORIS_TRACING", "").strip() or ""
-        ).__bool__()
+
+        # Tracing flag
+        self.tracing: bool = bool(os.getenv("BORIS_TRACING", "").strip())
 
     def _make_client(self):
         """Instantiate the low-level client via the selected provider adapter."""
@@ -337,7 +355,7 @@ class LLMInterface:
         Falls back to self.llm_model only if it was set explicitly earlier.
         """
         kind = (model_kind or "chat").lower()
-        provider = canonicalize_provider(getattr(self, "provider", "openai"))
+        provider = canonicalize_provider(self.provider)
 
         # Map kind → instance env override (already loaded in _load_env_vars)
         env_by_kind = {
@@ -1005,9 +1023,9 @@ class LLMInterface:
             # Summarize deltas like: created src/x.py, moved src/a -> src/b, updated ...
             parts: List[str] = []
             for d in res.changes or []:
-                kind = getattr(d, "kind", None)
-                before = getattr(d, "before", None)
-                after = getattr(d, "after", None)
+                kind = d.kind
+                before = d.before
+                after = d.after
                 if kind == ChangeKind.created and after:
                     parts.append(f"created {after.path}")
                 elif kind == ChangeKind.updated and after:

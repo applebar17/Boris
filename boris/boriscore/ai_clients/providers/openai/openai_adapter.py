@@ -16,7 +16,7 @@ from boris.boriscore.ai_clients.protocols.protocol_chat import (
     ChatRequest,
     ChatResponse,
 )
-from boris.boriscore.ai_clients.utils import _clean_val
+from boris.boriscore.ai_clients.utils.utils import _clean_val
 from boris.boriscore.ai_clients.providers.openai.utils import (
     _wants_structured_output,
     _from_openai_response,

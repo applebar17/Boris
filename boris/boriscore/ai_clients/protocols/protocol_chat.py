@@ -166,9 +166,7 @@ class ChatRequest:
     params: Dict[str, Any] = field(default_factory=dict)  # temperature, top_p, etc.
     # Optional bookkeeping (not sent to providers unless you want to)
     request_id: Optional[str] = None
-    created_at: str = field(
-        default_factory=lambda: datetime.datetime.utcnow().isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.datetime.now().isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

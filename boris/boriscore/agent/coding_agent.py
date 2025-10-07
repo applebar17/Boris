@@ -10,7 +10,7 @@ from openai.types.chat.chat_completion_message_param import (
     ChatCompletionUserMessageParam,
 )
 from langsmith import traceable
-from boris.boriscore.code_structurer.code_manager import CodeProject
+from boris.boriscore.code.code_manager.disk_manager import DiskManager
 from boris.boriscore.agent.prompts import (
     REASONING,
     AGENT_CHAT_MESSAGE,
@@ -36,7 +36,7 @@ from boris.boriscore.agent.utils import (
 )
 
 
-class CodeWriter(CodeProject):
+class CodingAgent(DiskManager):
     """
     High-level orchestration for:
       - reasoning (planning actions),
@@ -56,7 +56,6 @@ class CodeWriter(CodeProject):
         base_path: Path = Path("."),
         asset_path: Path = Path("assets"),
         init_root: bool = True,
-        use_coding_agent_tools: bool = False,  # explicit toggle for AI-assisted create/update (toolbox_v2 + create and update node ai agent)
         *args,
         **kwargs,
     ):
@@ -84,7 +83,6 @@ class CodeWriter(CodeProject):
         ]
 
         # Build tool mapping (with or without AI-assisted ops)
-        self.use_coding_agent_tools = use_coding_agent_tools
         self.update_tool_mapping(original_request=None)
 
         self.on_event: Optional[Callable[[str, Path], None]] = (
@@ -183,25 +181,14 @@ class CodeWriter(CodeProject):
             "run_terminal_commands": self.run_terminal_tool,
         }
 
-        if self.use_coding_agent_tools:
-            self.code_writer_tools_mapping = {
-                **base_map,
-                "create_node": partial(
-                    self.create_node_ai_agent, original_request=original_request
-                ),
-                "update_node": partial(
-                    self.update_node_ai_agent, original_request=original_request
-                ),
-            }
-        else:
-            self.code_writer_tools_mapping = {
-                **base_map,
-                "create_node": self.create_node,
-                "update_node": self.update_node,
-            }
+        self.code_writer_tools_mapping = {
+            **base_map,
+            "create_node": self.create_node_ondisk,
+            "update_node": self.update_node_ondisk,
+        }
 
         self._log(
-            f"Updated tool mapping (coding_agent={self.use_coding_agent_tools}). "
+            f"[coding agent] Updated tool mapping. "
             f"Keys: {sorted(self.code_writer_tools_mapping.keys())}"
         )
 
@@ -268,12 +255,12 @@ class CodeWriter(CodeProject):
         """
         op = getattr(action.operation, "value", action.operation)
 
-        retrieve_bullets = CodeWriter._as_bullets(
-            f"{CodeWriter._mf_path_or_id(mf)} — {mf.why}"
+        retrieve_bullets = CodingAgent._as_bullets(
+            f"{CodingAgent._mf_path_or_id(mf)} — {mf.why}"
             for mf in getattr(action, "files_to_retrieve", [])
         )
-        edit_bullets = CodeWriter._as_bullets(getattr(action, "edit_sketch", []))
-        expected_outcome_block = CodeWriter._as_code_block(
+        edit_bullets = CodingAgent._as_bullets(getattr(action, "edit_sketch", []))
+        expected_outcome_block = CodingAgent._as_code_block(
             getattr(action, "expected_outcome", [])
         )
 

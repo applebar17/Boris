@@ -1,0 +1,21 @@
+{
+  "retrieve_node": {
+    "type": "function",
+    "function": {
+      "name": "retrieve_node",
+      "description": "Return the content of a file by its id.",
+      "strict": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "description": "Exact identifier (code) of the code file to fetch."
+          }
+        },
+        "required": ["node_id"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

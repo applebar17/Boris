@@ -79,15 +79,15 @@ def ai_init(
     stub = "\n".join(
         [
             "# Boris AI configuration (.env)",
-            "# Provider: 'openai' or 'azure'",
-            "BORIS_OAI_PROVIDER=openai",
+            "# Provider: 'openai', 'azure' or 'anthropic'",
+            "BORIS_LLM_PROVIDER=openai",
             "",
-            "# OpenAI (set when BORIS_OAI_PROVIDER=openai)",
+            "# OpenAI (set when BORIS_LLM_PROVIDER=openai)",
             "BORIS_OPENAI_API_KEY=",
             "# Optional: custom gateway",
             "BORIS_OPENAI_BASE_URL=",
             "",
-            "# Azure OpenAI (set when BORIS_OAI_PROVIDER=azure)",
+            "# Azure OpenAI (set when BORIS_LLM_PROVIDER=azure)",
             "BORIS_AZURE_OPENAI_ENDPOINT=",
             "BORIS_AZURE_OPENAI_API_KEY=",
             "BORIS_AZURE_OPENAI_API_VERSION=2024-06-01",
@@ -127,7 +127,7 @@ def ai_use_openai(
 ):
     """Configure Boris to use Vanilla OpenAI services."""
     path = _env_path(global_)
-    _set_env_var(path, "BORIS_OAI_PROVIDER", "openai")
+    _set_env_var(path, "BORIS_LLM_PROVIDER", "openai")
     _set_env_var(path, "BORIS_OPENAI_API_KEY", api_key)
     if base_url:
         _set_env_var(path, "BORIS_OPENAI_BASE_URL", base_url)
@@ -311,7 +311,7 @@ def ai_use_azure(
 ):
     """Configure Boris to use Azure OpenAI services."""
     path = _env_path(global_)
-    _set_env_var(path, "BORIS_OAI_PROVIDER", "azure")
+    _set_env_var(path, "BORIS_LLM_PROVIDER", "azure")
     _set_env_var(path, "BORIS_AZURE_OPENAI_ENDPOINT", endpoint)
     _set_env_var(path, "BORIS_AZURE_OPENAI_API_KEY", api_key)
     _set_env_var(path, "BORIS_AZURE_OPENAI_API_VERSION", api_version)

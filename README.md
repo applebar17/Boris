@@ -108,7 +108,7 @@ Env-style:
 
 ```bash
 # required
-BORIS_OAI_PROVIDER=openai
+BORIS_LLM_PROVIDER=openai
 BORIS_OPENAI_API_KEY=sk-...
 
 # optional: OpenAI-compatible/self-hosted gateways
@@ -143,7 +143,7 @@ Env-style:
 
 ```bash
 # required
-BORIS_OAI_PROVIDER=azure
+BORIS_LLM_PROVIDER=azure
 BORIS_AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
 BORIS_AZURE_OPENAI_API_KEY=...
 

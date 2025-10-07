@@ -1,5 +1,5 @@
 import pytest
-from boris.boriscore.code_structurer.code_nodes import ProjectNode
+from boris.boriscore.code.code_manager.code_nodes import ProjectNode
 
 
 def test_create_project_node():

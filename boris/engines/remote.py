@@ -25,12 +25,12 @@ class RemoteEngine:
     ):
         self.base = base_path or pathlib.Path.cwd()
         # if not provided, fall back to package logger
-        self.logger = (logger or logging.getLogger("boris")).getChild("engines.local")
+        self.logger = (logger or logging.getLogger("boris")).getChild("eng.loc")
         self.logger.info("Init LocalEngine at base=%s", self.base)
 
         # Create CodeWriter with its own child
         self.cw = CodingAgent(
-            logger=self.logger.getChild("diskmanager"),
+            logger=self.logger.getChild("diskMng"),
             init_root=True,
             base_path=self.base,
         )
@@ -70,7 +70,7 @@ class RemoteEngine:
         dm = DiskManager(
             init_root=True,
             base_path=self.base,
-            logger=self.logger.getChild("diskmanager"),
+            logger=self.logger.getChild("diskMng"),
         )
         dm.root.name = self.base.name
         dm.import_from_disk(src=self.base)

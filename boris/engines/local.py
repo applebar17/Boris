@@ -34,13 +34,13 @@ class LocalEngine:
     ):
         self.base = base_path or pathlib.Path.cwd()
         # if not provided, fall back to package logger
-        self.logger = (logger or logging.getLogger("boris")).getChild("engines.local")
-        self.logger.info("Init LocalEngine at base=%s", self.base)
+        self.logger = (logger or logging.getLogger("boris")).getChild("eng.loc")
+        self._log(f"Init LocalEngine at base={self.base}", "info")
         self.last_sync_report: dict | None = None
 
         # Create CodeWriter with its own child
         self.ca = CodingAgent(
-            logger=self.logger.getChild("codewriter"),
+            logger=self.logger.getChild("cWriter"),
             init_root=True,
             base_path=self.base,
         )
@@ -56,6 +56,9 @@ class LocalEngine:
 
         # Build the in-memory project tree from the filesystem
         self._bootstrap_project_tree()
+
+    def _log(self, msg: str, log_type: str = "info") -> None:
+        log_msg(self.logger, msg, log_type=log_type)
 
     def set_event_sink(self, on_event) -> None:
         """
@@ -77,34 +80,33 @@ class LocalEngine:
         2) Merge current disk into the in-memory tree (refresh code; add new nodes).
         3) Persist a fresh snapshot (user data dir), NEVER touching the repo.
         """
-        self.logger.info("Bootstrapping project tree from %s", self.base)
+        self._log(f"Bootstrapping project tree from {self.base}", "info")
 
         # 1) Try load existing snapshot
         snap_path = _snap_load_path(self.base)
         if snap_path:
-            self.logger.info("Loading cached project snapshot: %s", snap_path)
+            self._log(f"Loading cached project snapshot: {snap_path}", "info")
             dm = DiskManager.from_json(
                 json_path=snap_path,
                 base_path=self.base,
-                logger=self.logger.getChild("codeproject"),
+                logger=self.logger.getChild("diskMng"),
             )
         else:
             dm = DiskManager(
                 init_root=True,
                 base_path=self.base,
-                logger=self.logger.getChild("codeproject"),
+                logger=self.logger.getChild("diskMng"),
             )
             dm.root.name = self.base.name
 
         # 2) Merge current disk state (read-only, in-memory changes)
-        report = DiskManager.sync_with_disk(
+        report = dm.sync_with_disk(
             src=self.base,
             read_code=True,
             ai_enrichment_metadata_pipe=True,
-            remove_missing=False,
+            remove_missing=True,
         )
         self.last_sync_report = report
-        self.logger.debug("Sync report: %s", report)
 
         # Hand over tree to the CodeWriter
         self.ca.root = dm.root
@@ -117,13 +119,14 @@ class LocalEngine:
         # 3) Save updated snapshot (user data dir)
         try:
             _snap_save(self.base, dm.to_dict())
+            self._log("Snapshot correctly saved", "debug")
         except Exception as e:
-            self.logger.warning("Snapshot save failed: %s", e)
+            self._log(f"Snapshot save failed: {e}", "warning")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Chat API
     # ──────────────────────────────────────────────────────────────────────────
-    @traceable
+    # @traceable
     def chat_local_engine(self, history: list[dict], user: str) -> dict:
         """
         Execute one round of chat against the local agent.
@@ -152,13 +155,13 @@ class LocalEngine:
             "delete_node": partial(self.ca.delete_node),
         }
 
-        self.logger.debug("Chat turn (user=%s, messages=%d)", user, len(history))
+        self._log(f"Chat turn (user={user}, messages={len(history)})", "debug")
         params = self.ca.handle_params(
             system_prompt=CHATBOT.format(
                 project_structure=self.ca.get_tree_structure(description=True)
             ),
             chat_messages=history,
-            model=getattr(self.ca, "llm_model", "gpt-4o-mini"),
+            model_kind="chat",
             temperature=0.5,
             tools=[
                 tool
@@ -176,7 +179,7 @@ class LocalEngine:
         dm = DiskManager(
             init_root=False,
             base_path=self.base,
-            logger=self.logger.getChild("codeproject"),
+            logger=self.logger.getChild("diskMng"),
         )
         dm.root = self.ca.root
         wrapper = dm.to_dict()
@@ -184,8 +187,8 @@ class LocalEngine:
         try:
             _snap_save(self.base, wrapper)
         except Exception as e:
-            self.logger.warning("Snapshot save failed: %s", e)
+            self._log(f"Snapshot save failed: {e}", "warning")
 
         answer_text = answer_obj.message.content
-        self.logger.debug("Answer len=%d", len(answer_text))
+        self._log(f"Answer len={len(answer_text)}", "debug")
         return {"answer": answer_text, "project": wrapper["project"]}

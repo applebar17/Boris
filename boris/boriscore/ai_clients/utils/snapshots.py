@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from collections import Counter
 
-from boris.boriscore.ai_clients.llm_core import LLMInterface
+from boris.boriscore.ai_clients.llm_core.llm_core import (
+    LLMInterfaceCore as LLMInterface,
+)
 from boris.boriscore.ai_clients.dataclasses.dataclasses_config import (
     ClientConfigSnapshot,
     EnvPaths,
@@ -58,10 +60,10 @@ def snapshot_from_client(client: "LLMInterface") -> ClientConfigSnapshot:
 
     # Models
     models = ModelConfig(
-        chat=getattr(client, "model_chat", None),
-        coding=getattr(client, "model_coding", None),
-        reasoning=getattr(client, "model_reasoning", None),
-        embedding=getattr(client, "embedding_model", "text-embedding-3-small"),
+        chat=client._resolve_model_for_kind(kind="chat"),
+        coding=client._resolve_model_for_kind(kind="coding"),
+        reasoning=client._resolve_model_for_kind(kind="reasoning"),
+        embedding=client._resolve_model_for_kind(kind="embedding"),
     )
 
     # Runtime knobs (respect instance overrides if present)

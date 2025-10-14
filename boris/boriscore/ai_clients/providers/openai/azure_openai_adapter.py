@@ -25,18 +25,25 @@ class AzureOpenAIAdapter(OpenAIAdapter):
     name = "azure"
 
     def __init__(self, logger: Optional[logging.Logger] = None, *args, **kwargs):
-        super().__init__(logger=logger, *args, **kwargs)
+        super().__init__(logger=logger.getChild("adapters"), *args, **kwargs)
         pass
 
     def make_client(self, cfg: ProviderConfig) -> AzureOpenAI:
+        self._log(
+            f"{cfg.azure_openai_endpoint},  {cfg.azure_openai_api_key}, {cfg.azure_openai_api_version} "
+        )
         if AzureOpenAI is None:
             raise RuntimeError("openai package with AzureOpenAI not available.")
-        if not (cfg.azure_endpoint and cfg.azure_api_key and cfg.azure_api_version):
+        if not (
+            cfg.azure_openai_endpoint
+            and cfg.azure_openai_api_key
+            and cfg.azure_openai_api_version
+        ):
             raise ValueError("Missing Azure OpenAI endpoint/api_key/api_version.")
         self.client = AzureOpenAI(
-            azure_endpoint=cfg.azure_endpoint,
-            api_key=cfg.azure_api_key,
-            api_version=cfg.azure_api_version,
+            azure_endpoint=cfg.azure_openai_endpoint,
+            api_key=cfg.azure_openai_api_key,
+            api_version=cfg.azure_openai_api_version,
         )
         if wrap_openai and cfg.tracing_enabled:
             try:
@@ -46,7 +53,7 @@ class AzureOpenAIAdapter(OpenAIAdapter):
                 pass
 
     def describe(self, cfg: ProviderConfig) -> str:
-        return f"AzureOpenAI(endpoint={cfg.azure_endpoint}, v={cfg.azure_api_version})"
+        return f"AzureOpenAI(endpoint={cfg.azure_openai_endpoint}, v={cfg.azure_openai_api_version})"
 
     def from_provider_response(self, resp: Any) -> ChatResponse:
         return _from_openai_response(resp)

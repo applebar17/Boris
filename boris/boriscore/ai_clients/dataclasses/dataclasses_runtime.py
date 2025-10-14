@@ -7,7 +7,9 @@ from enum import Enum
 from collections import Counter
 import json
 
-from boris.boriscore.ai_clients.llm_core import LLMInterface
+from boris.boriscore.ai_clients.llm_core.llm_core import (
+    LLMInterfaceCore as LLMInterface,
+)
 
 # ---------------------- enums ----------------------
 
@@ -166,10 +168,10 @@ def ensure_context_budget_with_audit(
         for idx, (m_before, m_after) in enumerate(zip(before_msgs, clamped)):
             if _msg_role(m_before) == "tool":
                 tb = client._count_tokens(
-                    _msg_content(m_before), client._encoding_for_model(model)
+                    _msg_content(m_before), client._encoding_for_model()
                 )
                 ta = client._count_tokens(
-                    _msg_content(m_after), client._encoding_for_model(model)
+                    _msg_content(m_after), client._encoding_for_model()
                 )
                 if ta < tb:
                     tool_clamps.append(

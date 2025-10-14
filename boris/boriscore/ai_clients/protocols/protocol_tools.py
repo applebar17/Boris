@@ -170,13 +170,29 @@ class RunTerminalCommandsArgs:
 
 @dataclass
 class InvokeAIAgentArgs:
-    """Empty schema in your tool definition."""
+    """"""
+
+    chat_history: dict = None
+    user: str = None
+    write_to_disk: bool = True
 
     @staticmethod
-    def from_dict(_: Dict[str, Any]) -> "InvokeAIAgentArgs":
-        return InvokeAIAgentArgs()
+    def from_dict(d: Dict[str, Any]) -> "InvokeAIAgentArgs":
+        return InvokeAIAgentArgs(
+            chat_history=d.get("chat_history"),
+            user=d.get("user"),
+            write_to_disk=d.get("write_to_disk"),
+        )
 
 
+ToolArgs = Union[
+    UpdateNodeArgs,
+    RetrieveNodeArgs,
+    CreateNodeArgs,
+    DeleteNodeArgs,
+    RunTerminalCommandsArgs,
+    InvokeAIAgentArgs,
+]
 # ---------------------- tool result schemas ----------------------
 
 

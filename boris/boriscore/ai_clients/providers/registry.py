@@ -97,7 +97,9 @@ def get_adapter(
 
 def canonicalize_provider(p: Optional[str]) -> str:
     p = (p or "").strip().lower()
-    # your code uses "azure" → keep as "azure"
+
+    if not p:
+        return ""
     if p in {"azure", "azure-openai"}:
         return "azure"
     if p in {"openai", ""}:
@@ -105,7 +107,7 @@ def canonicalize_provider(p: Optional[str]) -> str:
     if p in {"anthropic", "claude"}:
         return "anthropic"
     if p in {"gemini", "google"}:
-        return "gemini"
+        return "google"
     return p
 
 
@@ -136,17 +138,14 @@ def resolve_model(
         raise ValueError(f"Unknown model kind: {kind!r}")
 
     provider = canonicalize_provider(provider)
-    print(provider)
     # 1) explicit
     m_explicit = canonicalize_model(provider_name=provider, model_name=explicit)
     if m_explicit:
-        print("explicit")
         return m_explicit
 
     # 2) env (already read by your main class into e.g. self.model_chat)
     m_env = canonicalize_model(provider_name=provider, model_name=env_override)
     if m_env:
-        print("env")
         return m_env
 
     # 3) provider defaults for the kind
@@ -154,7 +153,6 @@ def resolve_model(
     default_name = provider_defaults.get(kind)
     if default_name:
         # default can also be an alias; resolve for consistency
-        print("default")
         return canonicalize_model(
             provider, default_name
         )  # returns alias target or the same string

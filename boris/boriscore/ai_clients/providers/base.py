@@ -29,9 +29,9 @@ class ProviderConfig:
     openai_base_url: Optional[str] = None
 
     # Azure OpenAI
-    azure_endpoint: Optional[str] = None
-    azure_api_key: Optional[str] = None
-    azure_api_version: Optional[str] = None
+    azure_openai_endpoint: Optional[str] = None
+    azure_openai_api_key: Optional[str] = None
+    azure_openai_api_version: Optional[str] = None
 
     # Anthropic
     anthropic_api_key: Optional[str] = None

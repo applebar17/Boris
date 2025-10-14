@@ -37,7 +37,7 @@ class OpenAIAdapter(LLMProviderAdapter):
 
     def __init__(self, logger: Optional[logging.Logger] = None):
         # call Protocol's __init__ (you currently put logic there)
-        super().__init__(logger=logger)
+        super().__init__(logger=logger.getChild("adapters"))
 
         self.embedding_model: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_EMBEDDING")
@@ -78,9 +78,11 @@ class OpenAIAdapter(LLMProviderAdapter):
 
     def make_client(self, cfg: ProviderConfig) -> OpenAI:
         if OpenAI is None:
-            raise RuntimeError("[adapters] openai package not available.")
+            raise RuntimeError("[adapters.openai] openai package not available.")
         if not cfg.openai_api_key:
-            raise ValueError("[adapters] Missing OPENAI_API_KEY for OpenAI provider.")
+            raise ValueError(
+                "[adapters.openai] Missing OPENAI_API_KEY for OpenAI provider."
+            )
         self.client = OpenAI(api_key=cfg.openai_api_key, base_url=cfg.openai_base_url)
         self.openai_embeddings_client = self.client
         return self.client
@@ -96,18 +98,21 @@ class OpenAIAdapter(LLMProviderAdapter):
         """
         payload = _build_openai_payload(req)
 
-        self._log("[adapters] payload serialized.", "debug")
+        self._log("[adapters.openai] payload serialized.", "debug")
 
         use_parse = _wants_structured_output(payload.get("response_format"))
-        self._log(f"[adapters] Invoking OpenAI provider (parse={use_parse}).", "debug")
+        self._log(
+            f"[adapters.openai] Invoking OpenAI provider (parse={use_parse}).", "debug"
+        )
 
+        self._log(f"[adapters.openai] Model from payload: {payload['model']}", "debug")
         if use_parse:
             resp: ChatCompletion = self.client.beta.chat.completions.parse(**payload)
         else:
             resp: ChatCompletion = self.client.chat.completions.create(**payload)
 
         protocol_resp = _from_openai_response(resp)
-        self._log(f"[adapter] Response protocolized.", "debug")
+        self._log(f"[adapters.openai] Response protocolized.", "debug")
 
         return protocol_resp
 
@@ -125,5 +130,5 @@ class OpenAIAdapter(LLMProviderAdapter):
                 **({} if not allow_dims else {"dimensions": dimensions}),
             )
         except Exception as e:
-            self._log(f"[adapters] Embedding request failed: {e}", "err")
+            self._log(f"[adapters.openai] Embedding request failed: {e}", "err")
             raise

@@ -7,6 +7,12 @@ from platformdirs import user_config_dir
 from dotenv import dotenv_values  # NOTE: dict-only; does not touch os.environ
 
 EMPTY = {None, "", " ", "\t", "\n"}
+_TASK_KINDS = ("chat", "coding", "reasoning", "embedding")
+_PROVIDER_KEYS = ("azure", "anthropic", "openai")
+
+
+def _env(k: str) -> str:
+    return os.getenv(k, "") or ""
 
 
 def _clean_val(v: Optional[str]) -> Optional[str]:
@@ -98,3 +104,9 @@ def _close_stack(s: str, stack: list[str]) -> str:
     for opener in reversed(stack):
         s += "}" if opener == "{" else "]"
     return s
+
+
+def _prov_models(prefix: str) -> dict[str, Optional[str]]:
+    return {
+        kind: _clean_val(_env(f"{prefix}_MODEL_{kind.upper()}")) for kind in _TASK_KINDS
+    }

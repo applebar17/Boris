@@ -1,7 +1,11 @@
+# boris.boriscore.ai_clients.providers.anthropic.utils
 from __future__ import annotations
 
+import re
+import copy
 import json
-from typing import Any, Dict, List, Optional, Tuple, Sequence, Union, cast
+import inspect
+from typing import Any, Dict, List, Optional, Tuple, Sequence, Union, cast, Type
 
 from anthropic.types.message import Message  # must exist or import will fail loudly
 
@@ -24,8 +28,66 @@ PARAMS_MAPPING: Dict[str, str] = {
     "top_p": "top_p",
     "top_k": "top_k",
     "max_tokens": "max_tokens",
+    "service_tier": "service_tier",
+    "tool_choice": "tool_choice",  # {"type":"auto"|"any"|"none"|"tool", name?: str}
+    "thinking": "thinking",  # {"type":"enabled","budget_tokens": 1024} etc.
     # "stop" handled specially → stop_sequences
+    # "user"/"metadata" handled below
 }
+
+
+# ---------------------- Structured output → virtual tool ----------------------
+
+_RF_TOOL_NAME = "__boris_response_json"
+
+
+def _schema_from_response_format(rf: Any) -> Optional[Dict[str, Any]]:
+    """
+    Accepts OpenAI-like response_format and returns a JSON Schema (Draft 2020-12) or None.
+    Supported shapes:
+      - {"type": "json_object"}                              → permissive object
+      - {"type": "json_schema", "json_schema": {"name":..., "schema": {...}}}
+      - {"json_schema": {"name":..., "schema": {...}}}
+      - Direct schema dict (we'll treat as {"type":"object",...}) if it looks like a schema
+    """
+    if rf is None:
+        return None
+    if isinstance(rf, dict):
+        # OpenAI "json_schema" wrapper
+        if "json_schema" in rf:
+            js = rf["json_schema"] or {}
+            schema = js.get("schema") or {}
+            if isinstance(schema, dict) and schema:
+                return schema
+            # If user passed schema directly in "json_schema"
+            if isinstance(js, dict) and js.get("type"):
+                return js
+            return {"type": "object"}  # fallback
+        # OpenAI "type":"json_object"
+        if rf.get("type") in ("json_object", "json"):
+            return {"type": "object"}
+        # Heuristic: looks like a JSON Schema object
+        if "type" in rf or "$schema" in rf or "properties" in rf:
+            return cast(Dict[str, Any], rf)
+    # Unsupported shapes (e.g., pydantic model class) → not handled here.
+    return None
+
+
+def _virtual_tool_for_schema(
+    schema: Dict[str, Any], name: str = _RF_TOOL_NAME
+) -> Dict[str, Any]:
+    """
+    Construct an Anthropic client tool that compels a JSON structure via tool_use.
+    """
+    return {
+        "name": name,
+        "description": (
+            "Return the final answer strictly as JSON matching this schema. "
+            "This is not an executable tool; it defines the required output shape."
+        ),
+        "input_schema": schema,
+    }
+
 
 # ---------------------- System / messages shaping -----------------------------
 
@@ -121,6 +183,113 @@ def to_anthropic_messages(
 
 # ---------------------- Tools (norm → Anthropic) ------------------------------
 
+# ---------------------------------------------------------------------------
+# Response-format → virtual tool (Pydantic-first)
+# ---------------------------------------------------------------------------
+
+
+def _snake(name: str) -> str:
+    import re
+
+    name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+    name = re.sub(r"[^a-z0-9_]+", "_", name).strip("_")
+    return name or "json"
+
+
+def _pydantic_model_cls(model_or_instance: Any) -> Optional[Type[Any]]:
+    try:
+        from pydantic import BaseModel as PBase  # type: ignore
+    except Exception:
+        return None
+    if inspect.isclass(model_or_instance) and issubclass(model_or_instance, PBase):  # type: ignore[arg-type]
+        return model_or_instance
+    if isinstance(model_or_instance, PBase):
+        return model_or_instance.__class__
+    return None
+
+
+def _schema_from_pydantic_model(
+    model_or_instance: Any,
+) -> Optional[Tuple[str, Dict[str, Any]]]:
+    model_cls = _pydantic_model_cls(model_or_instance)
+    if model_cls is None:
+        return None
+    if hasattr(model_cls, "model_json_schema"):  # pydantic v2
+        schema = model_cls.model_json_schema()  # type: ignore[attr-defined]
+    else:  # v1
+        schema = model_cls.schema()  # type: ignore[attr-defined]
+    if not isinstance(schema, dict):
+        raise TypeError("Pydantic schema must be a dict.")
+    return (model_cls.__name__, schema)
+
+
+def _pydantic_validate(model_or_instance: Any, data: Dict[str, Any]) -> Any:
+    """
+    Return a Pydantic model instance (v2 or v1) from dict data.
+    """
+    model_cls = _pydantic_model_cls(model_or_instance)
+    if model_cls is None:
+        raise TypeError("response_format was not a Pydantic model class/instance.")
+    if hasattr(model_cls, "model_validate"):  # v2
+        return model_cls.model_validate(data)  # type: ignore[attr-defined]
+    return model_cls.parse_obj(data)  # v1
+
+
+def _schema_from_pydantic_model(
+    model_or_instance: Any,
+) -> Optional[Tuple[str, Dict[str, Any]]]:
+    """
+    Return (model_name, json_schema) if `model_or_instance` is a Pydantic model class/instance.
+    Supports Pydantic v2 (`model_json_schema`) and v1 (`schema`).
+    """
+    try:
+        from pydantic import BaseModel as PBase  # type: ignore
+    except Exception:
+        return None  # pydantic not installed
+
+    model_cls = None
+    if inspect.isclass(model_or_instance) and issubclass(model_or_instance, PBase):  # type: ignore[arg-type]
+        model_cls = model_or_instance
+    elif isinstance(model_or_instance, PBase):
+        model_cls = model_or_instance.__class__
+
+    if model_cls is None:
+        return None
+
+    # v2 first
+    if hasattr(model_cls, "model_json_schema"):
+        schema = model_cls.model_json_schema()  # type: ignore[attr-defined]
+    else:
+        # v1 fallback
+        schema = model_cls.schema()  # type: ignore[attr-defined]
+
+    if not isinstance(schema, dict):
+        raise TypeError("Pydantic schema must be a dict.")
+
+    return (model_cls.__name__, schema)
+
+
+def response_format_to_normalized_tool(
+    rf: Any,
+    *,
+    prefer_name: Optional[str] = None,
+    description_prefix: str = "Outputs structured ",
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], str, Type[Any]]]:
+    """
+    -> (normalized_tool_spec, tool_choice, tool_name, pydantic_model_cls)
+    Returns None if rf is not a Pydantic model.
+    """
+    p = _schema_from_pydantic_model(rf)
+    if p is None:
+        return None
+    model_name, schema = p
+    model_cls = _pydantic_model_cls(rf)  # guaranteed non-None here
+    tool_name = prefer_name or f"output_{_snake(model_name)}"
+    description = f"{description_prefix}{model_name}."
+    tool_spec = {"name": tool_name, "description": description, "parameters": schema}
+    tool_choice = {"type": "tool", "name": tool_name}
+    return tool_spec, tool_choice, tool_name, model_cls  # type: ignore[return-value]
+
 
 def _as_plain_dict(obj: Any) -> Dict[str, Any]:
     if isinstance(obj, dict):
@@ -202,18 +371,11 @@ def _coerce_stop_sequences(val: Any) -> List[str]:
 
 
 def build_anthropic_payload(req: ChatRequest) -> Dict[str, Any]:
-    """
-    Convert a provider-agnostic ChatRequest into Anthropic Messages API payload.
-    Loud errors for missing/invalid fields; no silent coercions.
-    """
     system, messages = to_anthropic_messages(req.messages)
 
-    # max_tokens MUST be provided for Anthropic; make it loud.
     if "max_tokens" not in req.params:
-        raise ValueError(
-            "[adapters] Anthropic requires params['max_tokens']. "
-            "Pass an explicit value in ChatRequest.params."
-        )
+        req.params["max_tokens"] = 15_000
+
     max_tokens = req.params["max_tokens"]
     if not isinstance(max_tokens, int) or max_tokens <= 0:
         raise TypeError(
@@ -228,11 +390,38 @@ def build_anthropic_payload(req: ChatRequest) -> Dict[str, Any]:
     if system:
         payload["system"] = system
 
-    tools = to_anthropic_tools(req.tools)
+    # ---- Start with any user-provided tools (normalized) ----
+    normalized_tools: List[Dict[str, Any]] = list(req.tools or [])
+
+    # ---- response_format → virtual tool + forced tool_choice (if not explicitly set) ----
+    rf = req.params.get("response_format")
+    forced_tool_choice: Optional[Dict[str, Any]] = None
+
+    rf_result = response_format_to_normalized_tool(rf)
+    if rf_result:
+        rf_tool_spec, rf_tool_choice = rf_result[:2]
+
+        # de-duplicate by tool name
+        existing_names = {
+            (
+                _as_plain_dict(t).get("name")
+                if not isinstance(t, dict)
+                else t.get("name")
+            )
+            for t in normalized_tools
+        }
+        if rf_tool_spec.get("name") not in existing_names:
+            normalized_tools.append(rf_tool_spec)
+
+        # Only force tool_choice if caller didn't set one explicitly
+        forced_tool_choice = rf_tool_choice
+
+    # ---- Convert normalized tools → Anthropic shape ----
+    tools = to_anthropic_tools(normalized_tools)
     if tools:
         payload["tools"] = tools
 
-    # passthrough scalar params
+    # Pass scalar params Anthropic supports
     for internal, provider in PARAMS_MAPPING.items():
         val = req.params.get(internal)
         if val is not None:
@@ -242,12 +431,27 @@ def build_anthropic_payload(req: ChatRequest) -> Dict[str, Any]:
     if "stop" in req.params:
         payload["stop_sequences"] = _coerce_stop_sequences(req.params["stop"])
 
-    # Anthropic supports "metadata": {"user_id": "..."}; wire if you like:
+    # metadata + user → metadata.user_id
+    meta = {}
+    if "metadata" in req.params:
+        if not isinstance(req.params["metadata"], dict):
+            raise TypeError("[adapters] metadata must be a dict if provided.")
+        meta.update(req.params["metadata"])
     if "user" in req.params:
         user = req.params["user"]
         if not isinstance(user, str) or not user:
             raise TypeError(f"[adapters] user must be a non-empty str, got: {user!r}")
-        payload["metadata"] = {"user_id": user}
+        meta.setdefault("user_id", user)
+    if meta:
+        payload["metadata"] = meta
+
+    # If response_format added a virtual tool and the caller didn't set tool_choice, force it
+    if (
+        "tool_choice" not in payload
+        and forced_tool_choice is not None
+        and "tool_choice" not in req.params
+    ):
+        payload["tool_choice"] = forced_tool_choice
 
     return payload
 
@@ -281,6 +485,11 @@ def from_anthropic_response(resp: Message) -> ChatResponse:
                 raise TypeError(f"text block .text must be str, got: {type(text)!r}")
             text_chunks.append(text)
 
+        elif btype == "thinking":
+            # Extended thinking: safe to ignore for final answer, it's present in resp.raw
+            # Optionally: collect to a local list if you want to expose later.
+            continue
+
         elif btype == "tool_use":
             # Claude tool call
             tc_id = block.id  # type: ignore[attr-defined]
@@ -308,7 +517,7 @@ def from_anthropic_response(resp: Message) -> ChatResponse:
             )
 
         else:
-            # Be loud on unsupported block kinds so you can add handling (e.g., images/audio later)
+            # Stay loud for truly unsupported kinds, but allow 'thinking' above.
             raise ValueError(f"Unsupported Claude content block type: {btype!r}")
 
     assistant_text = "".join(text_chunks)

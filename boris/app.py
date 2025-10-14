@@ -4,7 +4,6 @@ from typing import Iterable, Optional, Union
 from rich.console import Console
 from rich.panel import Panel
 from prompt_toolkit import PromptSession
-from rich.panel import Panel
 from boris.render import md_panel
 
 from boris.config import Settings
@@ -36,7 +35,7 @@ class EngineProtocol:
 class LocalAdapter(EngineProtocol):
     def __init__(self, logger: logging.Logger):
         # give LocalEngine a scoped child
-        self.impl = LocalEngine(logger=logger.getChild("engines.local"))
+        self.impl = LocalEngine(logger=logger.getChild("eng.loc"))
 
     def chat(self, history: list[dict], user: str) -> dict:
         return self.impl.chat_local_engine(history=history, user=user)
@@ -55,9 +54,7 @@ class RemoteAdapter(EngineProtocol):
         logger: logging.Logger,
     ):
         # pass a child to RemoteEngine as well
-        self.impl = RemoteEngine(
-            api_base, api_token, logger=logger.getChild("engines.remote")
-        )
+        self.impl = RemoteEngine(api_base, api_token, logger=logger.getChild("eng.rem"))
         self.project_id = project_id
         if not self.project_id:
             if hasattr(self.impl, "ensure_project"):
@@ -87,6 +84,7 @@ def _select_engine(cfg: Settings, *, logger: logging.Logger) -> EngineProtocol:
 def run_chat(
     scripted_inputs: Optional[Iterable[str]] = None, *, logger: logging.Logger
 ) -> None:
+
     app_log = logger.getChild("app")
     cfg = Settings.load()
     app_log.info("Starting chat (engine=%s, user=%s)", cfg.engine, cfg.user)

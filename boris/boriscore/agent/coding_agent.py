@@ -83,14 +83,14 @@ class CodingAgent(DiskManager):
         ]
 
         # Build tool mapping (with or without AI-assisted ops)
-        self.update_tool_mapping(original_request=None)
+        self.update_tool_mapping(write_to_disk=True)
 
         self.on_event: Optional[Callable[[str, Path], None]] = (
             None  # global sink for CRUD events
         )
 
         super().__init__(  # CodeProject init
-            logger=logger,
+            logger=logger.getChild("diskMng"),
             base_path=self.base_path,
             init_root=init_root,
             *args,
@@ -168,7 +168,7 @@ class CodingAgent(DiskManager):
             )
         return tools, selected
 
-    def update_tool_mapping(self, original_request: Optional[str] = None) -> None:
+    def update_tool_mapping(self, write_to_disk: bool = True) -> None:
         """
         Build tool name → callable map. If `use_coding_agent_tools=True`, route create/update
         through AI-augmented helpers; otherwise use direct CRUD.
@@ -181,11 +181,18 @@ class CodingAgent(DiskManager):
             "run_terminal_commands": self.run_terminal_tool,
         }
 
-        self.code_writer_tools_mapping = {
-            **base_map,
-            "create_node": self.create_node_ondisk,
-            "update_node": self.update_node_ondisk,
-        }
+        if write_to_disk:
+            self.code_writer_tools_mapping = {
+                **base_map,
+                "create_node": self.create_node_ondisk,
+                "update_node": self.update_node_ondisk,
+            }
+        else:
+            self.code_writer_tools_mapping = {
+                **base_map,
+                "create_node": self.create_node,
+                "update_node": self.update_node,
+            }
 
         self._log(
             f"[coding agent] Updated tool mapping. "
@@ -304,17 +311,17 @@ class CodingAgent(DiskManager):
             system_prompt=OUTPUT_SUMMARY_SYSTEM_PROMPT,
             chat_messages=chat_messages,
             temperature=temperature,
-            model=model or getattr(self, "llm_model", None),
+            model_kind="chat",
             user=user,
         )
-        out: ChatResponse = self.call(params=params, tools_mapping=None)
+        out: ChatResponse = self.call(req=params, tools_mapping=None)
         self._log("[agent] Summarized output content.", "info")
 
         return out.message.content
 
     # -------------------- agent pipelines --------------------
 
-    @traceable
+    # @traceable
     def action_planner(
         self,
         action: Action,
@@ -351,7 +358,7 @@ class CodingAgent(DiskManager):
             ),
             chat_messages=chat_messages,
             temperature=temperature,
-            model=self.llm_model,
+            model_kind="chat",
             user=user,
             tools=[retrieve_tool],  # ONLY retriever exposed
             parallel_tool_calls=True,
@@ -371,6 +378,8 @@ class CodingAgent(DiskManager):
         parsed: ActionPlanningOutput
         if isinstance(result.message.content, dict):
             parsed = ActionPlanningOutput(**result.message.content)
+        elif type(result.message.content) == ActionPlanningOutput:
+            parsed = result.message.content
         else:
             parsed = ActionPlanningOutput(**json.loads(result.message.content))
 
@@ -385,7 +394,6 @@ class CodingAgent(DiskManager):
         # uses CodeProject._emit → will go to CLI sink if present
         self._emit("reasoning...")
         project_structure = self.get_tree_structure(description=True)
-        reasoning_model = getattr(self, "model_reasoning", None) or self.llm_model
 
         # Normalize chat_messages to a list
         if isinstance(chat_message, list):
@@ -398,7 +406,6 @@ class CodingAgent(DiskManager):
             raise ValueError("Unrecognized chat history/message structure.")
 
         available_tools = self.build_tool_blurb()
-        self._log(f"[agent] Reasoning model: {reasoning_model}", "debug")
 
         tools = [self.code_writer_toolbox.get("retrieve_node")]
         params = self.handle_params(
@@ -407,7 +414,7 @@ class CodingAgent(DiskManager):
                 available_tools=available_tools,
             ),
             chat_messages=chat_messages,
-            model=reasoning_model,
+            model_kind="reasoning",
             temperature=None,
             response_format=ReasoningPlan,  # ask client to parse if it supports it
             user=user,
@@ -428,6 +435,8 @@ class CodingAgent(DiskManager):
             parsed: ReasoningPlan
             if isinstance(result.message.content, dict):
                 parsed = ReasoningPlan(**result.message.content)
+            elif type(result.message.content) == ReasoningPlan:
+                parsed = result.message.content
             else:
                 parsed = ReasoningPlan(**json.loads(result.message.content))
 
@@ -442,7 +451,7 @@ class CodingAgent(DiskManager):
             # Bubble up a clear exception; callers can catch and reply.
             raise
 
-    @traceable
+    # @traceable
     def generate_files_chat(
         self,
         reasoning_output: ReasoningPlan,
@@ -479,7 +488,7 @@ class CodingAgent(DiskManager):
             ]
 
             # 3) Refresh mapping (inject the latest original_request for AI-assisted tools if enabled)
-            self.update_tool_mapping(original_request=chat_messages)
+            self.update_tool_mapping(write_to_disk=write_to_disk)
 
             # 4) Select exactly the tools allowed for this operation (NO retriever here)
             tools_to_send, selected_names, filtered_mapping = (
@@ -516,21 +525,17 @@ class CodingAgent(DiskManager):
                 system_prompt=system_prompt,
                 chat_messages=chat_messages,
                 temperature=0.0,
-                model=self.llm_model,
+                model_kind="coding",
                 tools=tools_to_send,
                 parallel_tool_calls=False,
                 user=user,
             )
             self._log(f"[agent] Entering Coder flow for user: {user}")
             output: ChatResponse = self.call(
-                params=params,
+                req=params,
                 tools_mapping=filtered_mapping,
             )
             output_messages.append(output.message.content)
-
-            # 7) Optionally write to disk after each action
-            if write_to_disk:
-                self.write_to_disk(dst=self.base_path)
 
         # 8) Summarize all actions’ outputs
         summary = self.summarize_action_outputs(
@@ -542,18 +547,23 @@ class CodingAgent(DiskManager):
         self._log("[agent] Returning final summary of the actions to the chatbot.")
         return summary
 
-    @traceable
+    # @traceable
     def invoke_agent(
-        self, chat_history: Union[str, list], user: Optional[str] = None
+        self,
+        chat_history: Union[str, list],
+        user: Optional[str] = None,
+        write_to_disk: bool = True,
     ) -> str:
         """One-shot: reason → generate → summarize."""
 
         # Sync first always
-        self.sync_with_disk(ai_enrichment_metadata_pipe=False)
+        self.sync_with_disk(ai_enrichment_metadata_pipe=False, remove_missing=True)
         self._log("[agent] Agent message received.")
         plan = self.reasoning_step(chat_message=chat_history, user=user)
         # return self.generate_files_chat(
         #     reasoning_output=plan, chat_message=chat_history, user=user
         # )
 
-        return self.generate_files_chat(reasoning_output=plan, user=user)
+        return self.generate_files_chat(
+            reasoning_output=plan, user=user, write_to_disk=write_to_disk
+        )

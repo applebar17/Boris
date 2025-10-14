@@ -48,6 +48,7 @@ class TerminalExecutor:
         last_tokens: int = 3000,
     ):
         self.base_path = Path(base_path).expanduser().resolve()
+        logger.name = "termExec"
         self.logger = logger
         if not self.base_path.exists():
             raise FileNotFoundError(f"Base path {self.base_path} does not exist")

@@ -22,7 +22,7 @@ class CRUD(CodeProject):
         super().__init__(
             base_path=base_path,
             output_project_path=output_project_path,
-            logger=logger,
+            logger=logger.getChild("cProject"),
             init_root=init_root,
             cmignore_override=cmignore_override,
             *args,
@@ -53,7 +53,7 @@ class CRUD(CodeProject):
         language: Optional[str] = None,
         commit_message: Optional[str] = None,
         node_id: Optional[str] = None,
-        code: Optional[str] = None,
+        code: Optional[str] = None,  # TODO: change to node_content everywhere
     ) -> ProjectNode | str:
 
         parent: ProjectNode = self.retrieve_node(parent_id, dump=False)  # type: ignore[arg-type]
@@ -78,7 +78,7 @@ class CRUD(CodeProject):
             language=language,
             commit_message=commit_message,
             id=node_id,
-            code=code,
+            node_content=code,
         )
         parent.add_child(new_node)
 
@@ -97,7 +97,10 @@ class CRUD(CodeProject):
         if self.root is None:
             raise ValueError("Project is empty. Please create ROOT folder first.")
 
+        self._log(f"Retrieving node: {node_id}", "debug")
+
         node = self.root.find_node(node_id)
+
         if node is None:
             raise ValueError(
                 f"Node '{node_id}' not found. "
@@ -114,9 +117,9 @@ class CRUD(CodeProject):
                 f"named {node.name}\n"
                 f"located at {node.relative_path}\n"
                 f"with description: {node.description}\n"
-                f"Coded in [{node.language}]:\n\nCODE START---"
+                f"Coded in [{node.language}]:\n\nCODE STARTS BELOW\n---"
                 f"{node.node_content}"
-                "\n\nCODE END---"
+                "\n\n---\nCODE ENDED"
                 # f"Now, you cannot fetch anymore information from node {node.id}."
             )
 

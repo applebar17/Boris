@@ -36,7 +36,7 @@ class DiskManager(CRUD):
         super().__init__(
             base_path=base_path,
             output_project_path=output_project_path,
-            logger=logger,
+            logger=logger.getChild("CRUD"),
             init_root=init_root,
             cmignore_override=cmignore_override,
             *args,
@@ -62,6 +62,9 @@ class DiskManager(CRUD):
         dry_run: bool = False,
         on_event: Optional[Callable[[str, Path], None]] = None,
     ) -> str:
+
+        self._log(f"Updating node {node_id} on disk.", "debug")
+        node: ProjectNode = self.retrieve_node(node_id, dump=False)
 
         root_dst = self._root_dst(dst)
         if not root_dst.exists() and not dry_run:
@@ -253,6 +256,72 @@ class DiskManager(CRUD):
 
         return f"Node {ids_removed} correctly deleted!"
 
+    def _diskfile_add_description_metadata(
+        self,
+        file_name: str,
+        file_content: Optional[str],
+        system_prompt: str = FILEDISK_DESCRIPTION_METADATA,
+    ) -> FileDiskMetadata:
+        """
+        Generate FileDiskMetadata for a single file via the LLM.
+
+        - Truncates overly large content to avoid token overflows.
+        - Enforces structured JSON output (parsed into FileDiskMetadata).
+        """
+        # Testing purposes
+
+        # return FileDiskMetadata(
+        #     description="unable to parse metadata",
+        #     scope="unknown",
+        #     coding_language="unknown",
+        # )
+
+        content_snippet = _safe_truncate(file_content or "")
+
+        user_msg = (
+            f"FILE: {file_name}\n" f"CONTENT START\n{content_snippet}\nCONTENT END"
+        )
+
+        params = self.handle_params(
+            system_prompt=system_prompt,
+            chat_messages=[{"role": "user", "content": user_msg}],
+            model_kind="chat",
+            temperature=0.0,
+            response_format=FileDiskMetadata,  # your structured output
+            max_tokens=100,
+        )
+
+        code_description_output: ChatResponse = self.call(
+            req=params, tools_mapping=None
+        )
+
+        # Some providers already return structured objects. If not, parse JSON.
+        try:
+            parsed: FileDiskMetadata
+            if isinstance(code_description_output.message.content, dict):
+                parsed = FileDiskMetadata(**code_description_output.message.content)
+            elif type(code_description_output.message.content) == FileDiskMetadata:
+                parsed = code_description_output.message.content
+            else:
+                parsed = FileDiskMetadata(
+                    **json.loads(code_description_output.message.content)
+                )
+            self._log(f"[code.disk_manager] Successfully described code!")
+
+        except Exception:
+            # last-resort guardrail
+            parsed = FileDiskMetadata(
+                description="unable to parse metadata",
+                scope="unknown",
+                coding_language="unknown",
+            )
+            self._log(
+                f"[code.disk_manager] Failed to describe code for file {file_name}.",
+                "error",
+            )
+
+        return parsed
+
     # -----------------------------------------------------------
     # Persist to filesystem (optional)
     # -----------------------------------------------------------
@@ -340,7 +409,7 @@ class DiskManager(CRUD):
             self._emit(status, target)
 
         # Write a FOLDER node (ensure directory exists and recurse into children)
-        def write_dir(node) -> None:
+        def write_dir(node: ProjectNode) -> None:
             base: Path = self.path_for(node, root_dst=root_dst)
             if not base.exists():
                 if not dry_run:
@@ -349,7 +418,7 @@ class DiskManager(CRUD):
             else:
                 # self._emit("dir exists", base)
                 pass
-            for ch in getattr(node, "children", []) or []:
+            for ch in node.children or []:
                 if ch.is_file:
                     write_file(ch)
                 else:
@@ -373,11 +442,11 @@ class DiskManager(CRUD):
             if dst is None:
                 # match original behavior of reporting under computed root
                 self._log(
-                    f"[disk manager] Project (partial) written under {root_dst.resolve()}"
+                    f"[code.disk_manager] Project (partial) written under {root_dst.resolve()}"
                 )
             else:
                 self._log(
-                    f"[disk manager] Project (partial) written under {dst.resolve()}"
+                    f"[code.disk_manager] Project (partial) written under {dst.resolve()}"
                 )
             return
 
@@ -394,62 +463,7 @@ class DiskManager(CRUD):
             else:
                 write_dir(child)
 
-        self._log(f"[disk manager] Project written at {root_dst.resolve()}")
-
-    def _diskfile_add_description_metadata(
-        self,
-        file_name: str,
-        file_content: Optional[str],
-        system_prompt: str = FILEDISK_DESCRIPTION_METADATA,
-    ) -> FileDiskMetadata:
-        """
-        Generate FileDiskMetadata for a single file via the LLM.
-
-        - Truncates overly large content to avoid token overflows.
-        - Enforces structured JSON output (parsed into FileDiskMetadata).
-        """
-        # Testing purposes
-
-        # return FileDiskMetadata(
-        #     description="unable to parse metadata",
-        #     scope="unknown",
-        #     coding_language="unknown",
-        # )
-
-        content_snippet = _safe_truncate(file_content or "")
-
-        user_msg = (
-            f"FILE: {file_name}\n" f"CONTENT START\n{content_snippet}\nCONTENT END"
-        )
-
-        params = self.handle_params(
-            system_prompt=system_prompt,
-            chat_messages=[{"role": "user", "content": user_msg}],
-            model=self.llm_model,
-            temperature=0.0,
-            response_format=FileDiskMetadata,  # your structured output
-            max_tokens=100,
-        )
-
-        code_description_output: ChatResponse = self.call(
-            req=params, tools_mapping=None
-        )
-
-        # Some backends already return structured objects. If not, parse JSON.
-        raw = getattr(code_description_output, "message_content", "")
-        try:
-            payload = json.loads(raw) if isinstance(raw, str) else raw
-            result = FileDiskMetadata(**payload)
-        except Exception:
-            # last-resort guardrail
-            result = FileDiskMetadata(
-                description="unable to parse metadata",
-                scope="unknown",
-                coding_language="unknown",
-            )
-
-        self._log(f"[disk manager] Successfully described code!")
-        return result
+        self._log(f"[code.disk_manager] Project written at {root_dst.resolve()}")
 
     def import_from_disk(
         self,
@@ -467,7 +481,7 @@ class DiskManager(CRUD):
 
         def _onerror(err):
             self._log(
-                f"[disk manager] os.walk error on {getattr(err, 'filename', '?')}: {err}"
+                f"[code.disk_manager] os.walk error on {getattr(err, 'filename', '?')}: {err}"
             )
 
         if self.root is None:
@@ -518,19 +532,18 @@ class DiskManager(CRUD):
                     description="",
                     scope="",
                     node_id=node_id,
-                    dry_run=dry_run,
                 )
                 node = self.retrieve_node(node_id=node_id, dump=False)
                 path_to_node[folder_path] = node
                 created.append(node.id)
                 self._log(
-                    f"[disk manager] Imported node (dir): {folder_path.relative_to(src)}"
+                    f"[code.disk_manager] Imported node (dir): {folder_path.relative_to(src)}"
                 )
 
             # Files
             for f in files:
                 file_path = current_parent / f
-                self._log(f"[disk manager] Importing node (file): {file_path} ...")
+                self._log(f"[code.disk_manager] Importing node (file): {file_path} ...")
 
                 file_content: Optional[str] = None
                 if _should_read(file_path, read_code=read_code):
@@ -540,7 +553,7 @@ class DiskManager(CRUD):
                         file_content = raw.decode("utf-8", errors="ignore")
                     except Exception as e:
                         self._log(
-                            f"[disk manager] Read skipped ({e.__class__.__name__}): {file_path}"
+                            f"[code.disk_manager] Read skipped ({e.__class__.__name__}): {file_path}"
                         )
 
                 if _should_enrich(
@@ -570,12 +583,11 @@ class DiskManager(CRUD):
                     scope=metadata.scope,
                     node_id=node_id,
                     code=file_content,
-                    dry_run=dry_run,
                 )
                 node = self.retrieve_node(node_id=node_id, dump=False)
                 created.append(node.id)
 
-        self._log(f"[disk manager] Imported {len(created)} nodes from {src}")
+        self._log(f"[code.disk_manager] Imported {len(created)} nodes from {src}")
         return created
 
     def sync_with_disk(
@@ -657,8 +669,6 @@ class DiskManager(CRUD):
                         node_id=node_id,
                         description="",
                         scope="",
-                        dry_run=True,
-                        create_node_on_disk=False,  # NEVER write during sync
                     )
                     existing = self._child_by_name(
                         parent, part, is_file=False
@@ -714,8 +724,6 @@ class DiskManager(CRUD):
                         language=lang,
                         description=description,
                         scope=scope,
-                        dry_run=True,
-                        create_node_on_disk=False,  # NEVER write during sync
                     )
                     created_files += 1
                     self._emit("user created node", file_path)
@@ -824,5 +832,5 @@ class DiskManager(CRUD):
             "deleted_dirs": deleted_dirs,
             "deleted_files": deleted_files,
         }
-        self._log(f"[disk manager] Sync report: {report}", "debug")
+        self._log(f"[code.disk_manager] Sync report: {report}", "debug")
         return report

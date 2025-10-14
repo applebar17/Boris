@@ -10,7 +10,9 @@ from boris.boriscore.utils.utils import log_msg
 
 from boris.boriscore.code.code_manager.code_nodes import ProjectNode
 from boris.boriscore.terminal.terminal_interface import TerminalExecutor
-from boris.boriscore.ai_clients.llm_core import LLMInterface
+from boris.boriscore.ai_clients.llm_core.llm_core import (
+    LLMInterfaceCore as LLMInterface,
+)
 
 from boris.boriscore.code.toolbox import TOOLBOX
 from boris.boriscore.utils.resources import load_ignore_patterns
@@ -38,7 +40,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
         self.base_path: Path = Path(base_path)
         self.logger = logger
 
-        self._log(f"[code writer] Base path CodeProject = {self.base_path}")
+        self._log(f"[code.code-writer] Base path CodeProject = {self.base_path}")
 
         self._load_ignore_spec(cmignore_override=cmignore_override)
         self.output_path: Path = self.base_path / output_project_path
@@ -65,7 +67,12 @@ class CodeProject(LLMInterface, TerminalExecutor):
         ]
         self.code_project_toolbox = TOOLBOX
 
-        super().__init__(base_path=self.base_path, logger=self.logger, *args, **kwargs)
+        super().__init__(
+            base_path=self.base_path,
+            logger=self.logger.getChild("llmCore"),
+            *args,
+            **kwargs,
+        )
 
     # ------------------------- helpers -------------------------
 
@@ -171,7 +178,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
             hits = [p for p in sample if self._ignore_spec.match_file(p)]
             if hits:
                 self._log(
-                    f"[code writer] Ignore spec active; sample matches: {', '.join(hits)}"
+                    f"[code.code-writer] Ignore spec active; sample matches: {', '.join(hits)}"
                 )
         except Exception:
             pass
@@ -302,7 +309,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
                 commit_message=node_dict.get("commit_message"),
                 id=node_dict["id"],
                 parent=parent,
-                code=node_dict.get("code"),  # ← NEW
+                node_content=node_dict.get("node_content"),
             )
             proj._register(node.id)
             for child_dict in node_dict.get("children", []):

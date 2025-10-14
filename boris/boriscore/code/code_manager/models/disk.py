@@ -31,7 +31,7 @@ class FileDiskMetadata(BaseModel):
     scope: CodeScopes
     coding_language: str = Field(
         ...,
-        description='lowercase language name like "python", "typescript", "javascript", "tsx", "jsx", "json", "yaml", "toml", "markdown", "bash", "dockerfile", "makefile", "css", "html", "sql", "unknown"',
+        description='Required: lowercase language name like "python", "typescript", "javascript", "tsx", "jsx", "json", "yaml", "toml", "markdown", "bash", "dockerfile", "makefile", "css", "html", "sql", "unknown"',
     )
 
 

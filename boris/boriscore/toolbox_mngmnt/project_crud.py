@@ -12,7 +12,7 @@ RETRIEVE_NODE = ToolSpec(
             "properties": {
                 "node_id": {
                     "type": "string",
-                    "description": "Exact identifier (code or UUID) of the node to fetch.",
+                    "description": "Exact identifier (ID of the node, usually coincides with path in square brakets [root/...]) of the node to fetch.",
                 }
             },
             "required": ["node_id"],

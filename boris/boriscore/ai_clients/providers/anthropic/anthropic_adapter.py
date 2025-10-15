@@ -37,7 +37,8 @@ class AnthropicAdapter(LLMProviderAdapter):
     name = "anthropic"
 
     def __init__(self, logger: Optional[logging.Logger] = None) -> None:
-        super().__init__(logger=logger.getChild("adapters"))
+        logger.name = "[adapters.anthropic]"
+        super().__init__(logger=logger)
 
         # Anthropic has embeddings now, but model names vary by release.
         # Keep an explicit setting if you add embeddings later.

@@ -34,13 +34,14 @@ class LocalEngine:
     ):
         self.base = base_path or pathlib.Path.cwd()
         # if not provided, fall back to package logger
-        self.logger = (logger or logging.getLogger("boris")).getChild("eng.loc")
+        logger.name = "[engines.local]"
+        self.logger = logger
         self._log(f"Init LocalEngine at base={self.base}", "info")
         self.last_sync_report: dict | None = None
 
         # Create CodeWriter with its own child
         self.ca = CodingAgent(
-            logger=self.logger.getChild("cWriter"),
+            logger=self.logger,
             init_root=True,
             base_path=self.base,
         )
@@ -89,13 +90,13 @@ class LocalEngine:
             dm = DiskManager.from_json(
                 json_path=snap_path,
                 base_path=self.base,
-                logger=self.logger.getChild("diskMng"),
+                logger=self.logger,
             )
         else:
             dm = DiskManager(
                 init_root=True,
                 base_path=self.base,
-                logger=self.logger.getChild("diskMng"),
+                logger=self.logger,
             )
             dm.root.name = self.base.name
 
@@ -126,7 +127,7 @@ class LocalEngine:
     # ──────────────────────────────────────────────────────────────────────────
     # Chat API
     # ──────────────────────────────────────────────────────────────────────────
-    # @traceable
+    @traceable
     def chat_local_engine(self, history: list[dict], user: str) -> dict:
         """
         Execute one round of chat against the local agent.
@@ -179,7 +180,7 @@ class LocalEngine:
         dm = DiskManager(
             init_root=False,
             base_path=self.base,
-            logger=self.logger.getChild("diskMng"),
+            logger=self.logger,
         )
         dm.root = self.ca.root
         wrapper = dm.to_dict()

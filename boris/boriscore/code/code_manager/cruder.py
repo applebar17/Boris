@@ -22,7 +22,7 @@ class CRUD(CodeProject):
         super().__init__(
             base_path=base_path,
             output_project_path=output_project_path,
-            logger=logger.getChild("cProject"),
+            logger=logger,
             init_root=init_root,
             cmignore_override=cmignore_override,
             *args,
@@ -97,7 +97,7 @@ class CRUD(CodeProject):
         if self.root is None:
             raise ValueError("Project is empty. Please create ROOT folder first.")
 
-        self._log(f"Retrieving node: {node_id}", "debug")
+        self._log(f"[CRUDer] Retrieving node: {node_id}", "debug")
 
         node = self.root.find_node(node_id)
 

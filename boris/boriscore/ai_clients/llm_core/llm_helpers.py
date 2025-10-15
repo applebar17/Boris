@@ -149,9 +149,10 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
         *args,
         **kwargs,
     ) -> None:
+        logger.name = "[llmHelpers]"
         # Defer env/adapters to Base
         super().__init__(
-            logger=logger.getChild("llmCore"),
+            logger=logger,
             base_path=base_path,
             provider=provider,
             *args,

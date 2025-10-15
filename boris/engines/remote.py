@@ -24,13 +24,14 @@ class RemoteEngine:
         toolbox_override: pathlib.Path | None = None,
     ):
         self.base = base_path or pathlib.Path.cwd()
+        logger.name = "[engines.remote]"
         # if not provided, fall back to package logger
-        self.logger = (logger or logging.getLogger("boris")).getChild("eng.loc")
+        self.logger = logger or logging.getLogger("boris")
         self.logger.info("Init LocalEngine at base=%s", self.base)
 
         # Create CodeWriter with its own child
         self.cw = CodingAgent(
-            logger=self.logger.getChild("diskMng"),
+            logger=self.logger,
             init_root=True,
             base_path=self.base,
         )
@@ -70,7 +71,7 @@ class RemoteEngine:
         dm = DiskManager(
             init_root=True,
             base_path=self.base,
-            logger=self.logger.getChild("diskMng"),
+            logger=self.logger,
         )
         dm.root.name = self.base.name
         dm.import_from_disk(src=self.base)

@@ -35,7 +35,7 @@ class EngineProtocol:
 class LocalAdapter(EngineProtocol):
     def __init__(self, logger: logging.Logger):
         # give LocalEngine a scoped child
-        self.impl = LocalEngine(logger=logger.getChild("eng.loc"))
+        self.impl = LocalEngine(logger=logger)
 
     def chat(self, history: list[dict], user: str) -> dict:
         return self.impl.chat_local_engine(history=history, user=user)
@@ -54,7 +54,7 @@ class RemoteAdapter(EngineProtocol):
         logger: logging.Logger,
     ):
         # pass a child to RemoteEngine as well
-        self.impl = RemoteEngine(api_base, api_token, logger=logger.getChild("eng.rem"))
+        self.impl = RemoteEngine(api_base, api_token, logger=logger)
         self.project_id = project_id
         if not self.project_id:
             if hasattr(self.impl, "ensure_project"):
@@ -85,7 +85,7 @@ def run_chat(
     scripted_inputs: Optional[Iterable[str]] = None, *, logger: logging.Logger
 ) -> None:
 
-    app_log = logger.getChild("app")
+    app_log = logger
     cfg = Settings.load()
     app_log.info("Starting chat (engine=%s, user=%s)", cfg.engine, cfg.user)
 

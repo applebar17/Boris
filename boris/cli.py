@@ -625,7 +625,7 @@ def chat(
 
     cfg = Settings.load()
     base_logger = setup_logging(config_log_dir=cfg.log_dir)
-    app_log = base_logger.getChild("app")
+    app_log = base_logger
 
     if console:
         add_console_tap(

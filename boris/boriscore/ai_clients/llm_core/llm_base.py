@@ -53,6 +53,7 @@ class LLMInterfaceBase:
         *args,
         **kwargs,
     ) -> None:
+        logger.name = "[llmBase]"
         self.logger = logger
         self.base_path = Path(base_path)
         self.provider = provider

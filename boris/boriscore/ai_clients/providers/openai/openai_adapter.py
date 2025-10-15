@@ -37,7 +37,8 @@ class OpenAIAdapter(LLMProviderAdapter):
 
     def __init__(self, logger: Optional[logging.Logger] = None):
         # call Protocol's __init__ (you currently put logic there)
-        super().__init__(logger=logger.getChild("adapters"))
+        logger.name = "[adapters.openai]"
+        super().__init__(logger=logger)
 
         self.embedding_model: Optional[str] = _clean_val(
             os.getenv("BORIS_MODEL_EMBEDDING")

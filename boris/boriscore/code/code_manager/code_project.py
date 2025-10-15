@@ -36,6 +36,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
         *args,
         **kwargs,
     ) -> None:
+        logger.name = "[codeProject]"
 
         self.base_path: Path = Path(base_path)
         self.logger = logger
@@ -69,7 +70,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
 
         super().__init__(
             base_path=self.base_path,
-            logger=self.logger.getChild("llmCore"),
+            logger=self.logger,
             *args,
             **kwargs,
         )

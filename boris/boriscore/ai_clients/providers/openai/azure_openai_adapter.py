@@ -25,7 +25,8 @@ class AzureOpenAIAdapter(OpenAIAdapter):
     name = "azure"
 
     def __init__(self, logger: Optional[logging.Logger] = None, *args, **kwargs):
-        super().__init__(logger=logger.getChild("adapters"), *args, **kwargs)
+        logger.name = "[adapters.azure]"
+        super().__init__(logger=logger, *args, **kwargs)
         pass
 
     def make_client(self, cfg: ProviderConfig) -> AzureOpenAI:

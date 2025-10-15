@@ -57,6 +57,7 @@ class LLMProviderAdapter(Protocol):
         self,
         logger: Optional[logging.Logger] = None,
     ):
+        logger.name = "[adapters]"
         self.encoder: Encoding = tiktoken.get_encoding("cl100k_base")
         self.logger = logger
         return

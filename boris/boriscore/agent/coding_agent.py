@@ -59,6 +59,8 @@ class CodingAgent(DiskManager):
         *args,
         **kwargs,
     ):
+        logger.name = "[codingAgent]"
+
         self.logger = logger
         self.base_path = handle_path(base_path=base_path, path=base_path)
         self._log(f"[agent] Base path = {self.base_path}")
@@ -90,7 +92,7 @@ class CodingAgent(DiskManager):
         )
 
         super().__init__(  # CodeProject init
-            logger=logger.getChild("diskMng"),
+            logger=logger,
             base_path=self.base_path,
             init_root=init_root,
             *args,
@@ -321,7 +323,7 @@ class CodingAgent(DiskManager):
 
     # -------------------- agent pipelines --------------------
 
-    # @traceable
+    @traceable
     def action_planner(
         self,
         action: Action,
@@ -385,7 +387,7 @@ class CodingAgent(DiskManager):
 
         return parsed
 
-    # @traceable
+    @traceable
     def reasoning_step(
         self, chat_message: Union[str, list], user: Optional[str] = None
     ) -> ReasoningPlan:
@@ -451,7 +453,7 @@ class CodingAgent(DiskManager):
             # Bubble up a clear exception; callers can catch and reply.
             raise
 
-    # @traceable
+    @traceable
     def generate_files_chat(
         self,
         reasoning_output: ReasoningPlan,
@@ -547,7 +549,7 @@ class CodingAgent(DiskManager):
         self._log("[agent] Returning final summary of the actions to the chatbot.")
         return summary
 
-    # @traceable
+    @traceable
     def invoke_agent(
         self,
         chat_history: Union[str, list],

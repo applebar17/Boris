@@ -103,10 +103,10 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         **kwargs,
     ) -> None:
 
-        logger.name = "llmCore"
+        logger.name = "[llmCore]"
         # Single pass through the MRO; Helpers will forward to Base.
         super().__init__(
-            logger=logger.getChild("llmCore"),
+            logger=logger,
             base_path=base_path,
             provider=provider,
             max_tokens_per_message_ratio=max_tokens_per_message_ratio,

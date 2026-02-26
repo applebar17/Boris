@@ -1,0 +1,16 @@
+{
+  "generate_code": {
+    "type": "function",
+    "function": {
+      "name": "generate_code",
+      "description": "Call an agent able of generating code out of a user request.",
+      "strict": true,
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -46,12 +46,14 @@ class AzureOpenAIAdapter(OpenAIAdapter):
             api_key=cfg.azure_openai_api_key,
             api_version=cfg.azure_openai_api_version,
         )
+        self.openai_embeddings_client = self.client
         if wrap_openai and cfg.tracing_enabled:
             try:
                 self.client: AzureOpenAI = wrap_openai(self.client)
                 self.openai_embeddings_client: AzureOpenAI = self.client
             except Exception:
                 pass
+        return self.client
 
     def describe(self, cfg: ProviderConfig) -> str:
         return f"AzureOpenAI(endpoint={cfg.azure_openai_endpoint}, v={cfg.azure_openai_api_version})"

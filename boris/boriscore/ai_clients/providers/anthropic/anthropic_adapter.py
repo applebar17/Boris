@@ -1,8 +1,10 @@
 # boris.boriscore.ai_clients.providers.anthropic.anthropic adapter
 from __future__ import annotations
 
+import inspect
+import json
 import logging
-from typing import List, Optional, Union, Any, cast
+from typing import List, Optional, Union, Any
 
 from anthropic import Anthropic
 from anthropic.types.message import Message  # must exist or import will fail loudly
@@ -12,7 +14,6 @@ from boris.boriscore.ai_clients.protocols.protocol_role_spec import get_role_spe
 from boris.boriscore.ai_clients.protocols.protocol_chat import (
     ChatRequest,
     ChatResponse,
-    BorisChatCompletionMessageFunctionToolCall,
     Msg,
 )
 from boris.boriscore.ai_clients.utils.utils import _clean_val
@@ -21,7 +22,7 @@ from boris.boriscore.ai_clients.utils.utils import _clean_val
 from boris.boriscore.ai_clients.providers.anthropic.utils import (
     build_anthropic_payload,
     from_anthropic_response,
-    response_format_to_normalized_tool,
+    response_format_to_schema,
     _pydantic_validate,
 )
 
@@ -86,6 +87,46 @@ class AnthropicAdapter(LLMProviderAdapter):
         # Wire it here once available in YOUR pinned SDK version.
         return None  # ← Deliberately not guessing; avoids false positives.
 
+    def _normalize_payload_for_messages_create(self, payload: dict) -> dict:
+        """
+        Keep payload compatible with both new and old anthropic SDK signatures.
+        Newer SDKs support `output_config`; older ones need `extra_body` or
+        (if available) legacy `output_format`.
+        """
+        if self.client is None or "output_config" not in payload:
+            return payload
+
+        params = inspect.signature(self.client.messages.create).parameters
+        if "output_config" in params:
+            return payload
+
+        output_config = payload.pop("output_config")
+        fmt = output_config.get("format") if isinstance(output_config, dict) else None
+
+        if "output_format" in params and isinstance(fmt, dict):
+            payload["output_format"] = fmt
+            self._log(
+                "[adapters.anthropic] SDK compatibility: remapped output_config -> output_format.",
+                "debug",
+            )
+            return payload
+
+        if "extra_body" in params:
+            extra_body = payload.get("extra_body")
+            if not isinstance(extra_body, dict):
+                extra_body = {}
+            extra_body["output_config"] = output_config
+            payload["extra_body"] = extra_body
+            self._log(
+                "[adapters.anthropic] SDK compatibility: moved output_config into extra_body.",
+                "debug",
+            )
+            return payload
+
+        raise RuntimeError(
+            "[adapters.anthropic] Anthropic SDK does not support structured output payload fields."
+        )
+
     # -------- chat --------
 
     def chat(self, req: ChatRequest) -> ChatResponse:
@@ -93,13 +134,12 @@ class AnthropicAdapter(LLMProviderAdapter):
             raise RuntimeError(
                 "[adapters.anthropic] Anthropic client not initialized. Call make_client(cfg) first."
             )
-        # --- Detect if caller requested structured output via Pydantic
+        # --- Detect if caller requested structured output
         rf = req.params.get("response_format")
-        rf_tool_name: Optional[str] = None
+        rf_schema: Optional[dict] = None
         rf_model_cls: Optional[type] = None
-        rf_tuple = response_format_to_normalized_tool(rf) if rf is not None else None
-        if rf_tuple:
-            _, _, rf_tool_name, rf_model_cls = rf_tuple
+        if rf is not None:
+            rf_schema, rf_model_cls = response_format_to_schema(rf)
 
         # --- Build payload (adds tools + possibly forces tool_choice)
         payload = build_anthropic_payload(req)
@@ -110,38 +150,39 @@ class AnthropicAdapter(LLMProviderAdapter):
 
         # --- Call Anthropic
         self._log("[adapters.anthropic] Invoking Anthropic provider.", "debug")
-        resp = self.client.messages.create(**payload)  # type: ignore
+        self._log(f"\n\n{json.dumps(payload, indent=2)}\n\n")
+        payload_for_call = self._normalize_payload_for_messages_create(dict(payload))
+        resp = self.client.messages.create(**payload_for_call)  # type: ignore
         proto = from_anthropic_response(resp)
         self._log("[adapters.anthropic] Response protocolized.", "debug")
 
-        # --- If structured output was requested, extract ONLY that result
-        if rf_tool_name and rf_model_cls:
-            # Separate RF tool calls from real ones
-            rf_calls: list[BorisChatCompletionMessageFunctionToolCall] = []
-            real_calls: list[BorisChatCompletionMessageFunctionToolCall] = []
-            for tc in proto.tool_calls:
-                name = getattr(tc.function, "name", None)
-                if name == rf_tool_name:
-                    rf_calls.append(tc)
-                else:
-                    real_calls.append(tc)
-
-            if rf_calls:
-                # Take the last RF call (in case model produced intermediate attempts)
-                last_rf = rf_calls[-1]
-                args = cast(dict, last_rf.function.arguments)  # utils decoded to dict
+        # --- If structured output was requested, parse JSON output (no tool calls)
+        if rf_schema is not None and not proto.tool_calls:
+            raw_content = proto.message.content
+            if isinstance(raw_content, str):
                 try:
-                    parsed_obj = _pydantic_validate(rf_model_cls, args)
+                    parsed_json = json.loads(raw_content)
                 except Exception as e:
-                    # Keep loud but informative
                     raise ValueError(
-                        f"[adapters.anthropic] RF tool arguments failed Pydantic validation: {e}"
+                        f"[adapters.anthropic] Failed to parse structured JSON output: {e}"
                     ) from e
+            elif isinstance(raw_content, dict):
+                parsed_json = raw_content
+            else:
+                raise ValueError(
+                    f"[adapters.anthropic] Structured output must be JSON text, got: {type(raw_content)!r}"
+                )
 
-                # Replace assistant message with the parsed object,
-                # and remove the RF tool call from the list (keep real ones).
+            if rf_model_cls:
+                try:
+                    parsed_obj = _pydantic_validate(rf_model_cls, parsed_json)
+                except Exception as e:
+                    raise ValueError(
+                        f"[adapters.anthropic] Structured output failed Pydantic validation: {e}"
+                    ) from e
                 proto.message = Msg(role="assistant", content=parsed_obj)
-                proto.tool_calls = real_calls
+            else:
+                proto.message = Msg(role="assistant", content=parsed_json)
 
         return proto
 

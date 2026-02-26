@@ -1,7 +1,6 @@
 # boris.boriscore.ai_clients.providers.anthropic.utils
 from __future__ import annotations
 
-import re
 import copy
 import json
 import inspect
@@ -36,22 +35,23 @@ PARAMS_MAPPING: Dict[str, str] = {
 }
 
 
-# ---------------------- Structured output → virtual tool ----------------------
-
-_RF_TOOL_NAME = "__boris_response_json"
+# ---------------------- Structured output → output_config ----------------------
 
 
 def _schema_from_response_format(rf: Any) -> Optional[Dict[str, Any]]:
     """
-    Accepts OpenAI-like response_format and returns a JSON Schema (Draft 2020-12) or None.
+    Accepts OpenAI-like response_format and returns a JSON Schema or None.
     Supported shapes:
       - {"type": "json_object"}                              → permissive object
       - {"type": "json_schema", "json_schema": {"name":..., "schema": {...}}}
       - {"json_schema": {"name":..., "schema": {...}}}
-      - Direct schema dict (we'll treat as {"type":"object",...}) if it looks like a schema
+      - Direct schema dict (if it looks like a schema)
     """
     if rf is None:
         return None
+    if isinstance(rf, str):
+        if rf in ("json_object", "json"):
+            return {"type": "object"}
     if isinstance(rf, dict):
         # OpenAI "json_schema" wrapper
         if "json_schema" in rf:
@@ -73,20 +73,117 @@ def _schema_from_response_format(rf: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _virtual_tool_for_schema(
-    schema: Dict[str, Any], name: str = _RF_TOOL_NAME
-) -> Dict[str, Any]:
+def _normalize_schema_objects(schema: Any) -> Any:
+    if isinstance(schema, dict):
+        # Anthropic strict schemas reject these constraint keywords.
+        for key in (
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "multipleOf",
+            "minLength",
+            "maxLength",
+            "maxItems",
+            "uniqueItems",
+            "minProperties",
+            "maxProperties",
+        ):
+            schema.pop(key, None)
+
+        # Anthropic only supports minItems 0/1.
+        min_items = schema.get("minItems")
+        if isinstance(min_items, int) and min_items not in (0, 1):
+            schema.pop("minItems", None)
+
+        node_type = schema.get("type")
+        is_object = node_type == "object" or (
+            isinstance(node_type, list) and "object" in node_type
+        )
+        if is_object or "properties" in schema:
+            schema["additionalProperties"] = False
+
+        # Keep only Anthropic-supported string formats.
+        if schema.get("type") == "string" and isinstance(schema.get("format"), str):
+            if schema["format"] not in {
+                "date-time",
+                "time",
+                "date",
+                "duration",
+                "email",
+                "hostname",
+                "uri",
+                "ipv4",
+                "ipv6",
+                "uuid",
+            }:
+                schema.pop("format", None)
+
+        props = schema.get("properties")
+        if isinstance(props, dict):
+            for k, v in props.items():
+                props[k] = _normalize_schema_objects(v)
+
+        pattern_props = schema.get("patternProperties")
+        if isinstance(pattern_props, dict):
+            for k, v in pattern_props.items():
+                pattern_props[k] = _normalize_schema_objects(v)
+
+        items = schema.get("items")
+        if isinstance(items, list):
+            schema["items"] = [_normalize_schema_objects(v) for v in items]
+        elif isinstance(items, dict):
+            schema["items"] = _normalize_schema_objects(items)
+
+        for key in ("anyOf", "allOf", "oneOf"):
+            block = schema.get(key)
+            if isinstance(block, list):
+                schema[key] = [_normalize_schema_objects(v) for v in block]
+
+        defs = schema.get("$defs")
+        if isinstance(defs, dict):
+            for k, v in defs.items():
+                defs[k] = _normalize_schema_objects(v)
+
+        defs_legacy = schema.get("definitions")
+        if isinstance(defs_legacy, dict):
+            for k, v in defs_legacy.items():
+                defs_legacy[k] = _normalize_schema_objects(v)
+
+        for key in ("if", "then", "else", "not"):
+            block = schema.get(key)
+            if isinstance(block, dict):
+                schema[key] = _normalize_schema_objects(block)
+
+        return schema
+    if isinstance(schema, list):
+        return [_normalize_schema_objects(v) for v in schema]
+    return schema
+
+
+def _transform_schema_for_anthropic(schema: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Construct an Anthropic client tool that compels a JSON structure via tool_use.
+    Normalize schema for Anthropic structured outputs:
+      - Apply SDK transform_schema if available
+      - Ensure additionalProperties: false on all object types
     """
-    return {
-        "name": name,
-        "description": (
-            "Return the final answer strictly as JSON matching this schema. "
-            "This is not an executable tool; it defines the required output shape."
-        ),
-        "input_schema": schema,
-    }
+    if not isinstance(schema, dict):
+        raise TypeError("Schema must be a dict for Anthropic normalization.")
+
+    schema_copy = copy.deepcopy(schema)
+    try:
+        from anthropic import transform_schema as _transform_schema  # type: ignore
+
+        try:
+            schema_copy = _transform_schema(schema_copy)
+        except Exception:
+            # Fall back to local normalization below
+            pass
+    except Exception:
+        # SDK helper not available; use local normalization
+        pass
+
+    return cast(Dict[str, Any], _normalize_schema_objects(schema_copy))
 
 
 # ---------------------- System / messages shaping -----------------------------
@@ -146,6 +243,61 @@ def _text_blocks_from_msg(m: Msg) -> List[Dict[str, str]]:
     return [{"type": "text", "text": text}]
 
 
+def _tool_use_blocks_from_meta(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Convert assistant meta.tool_calls into Anthropic tool_use blocks.
+    Accepts dicts in either:
+      - {"id","type","name","arguments"} (internal shape)
+      - {"id","type","function":{"name","arguments"}} (OpenAI-ish shape)
+    """
+    raw = meta.get("tool_calls")
+    if not raw:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raw = [raw]
+
+    out: List[Dict[str, Any]] = []
+    for i, tc in enumerate(raw):
+        call_id = None
+        name = None
+        args: Any = None
+
+        # SDK-style objects
+        if hasattr(tc, "function") and hasattr(tc, "id"):
+            call_id = getattr(tc, "id", None)
+            fn = getattr(tc, "function", None)
+            name = getattr(fn, "name", None) if fn is not None else None
+            args = getattr(fn, "arguments", None) if fn is not None else None
+        elif isinstance(tc, dict):
+            call_id = tc.get("id")
+            if isinstance(tc.get("function"), dict):
+                name = tc["function"].get("name")
+                args = tc["function"].get("arguments")
+            else:
+                name = tc.get("name")
+                args = tc.get("arguments")
+
+        if not name:
+            raise ValueError("Tool call missing name; cannot build tool_use block.")
+        if not call_id:
+            call_id = f"call_{i}"
+
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                # Anthropic requires a dict input; keep a best-effort wrapper.
+                args = {"_raw": args}
+        if args is None:
+            args = {}
+        if not isinstance(args, dict):
+            args = {"_raw": args}
+
+        out.append({"type": "tool_use", "id": call_id, "name": name, "input": args})
+
+    return out
+
+
 def to_anthropic_messages(
     messages: List[Msg],
 ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
@@ -176,6 +328,18 @@ def to_anthropic_messages(
                 f"Unsupported message role for Anthropic messages[]: {m.role!r}"
             )
 
+        if m.role == "assistant":
+            tool_blocks = _tool_use_blocks_from_meta(m.meta)
+            text = _as_text(m.content)
+            blocks: List[Dict[str, Any]] = []
+            if text and text.strip():
+                blocks.append({"type": "text", "text": text})
+            blocks.extend(tool_blocks)
+            if not blocks:
+                blocks = _text_blocks_from_msg(m)
+            out.append({"role": "assistant", "content": blocks})
+            continue
+
         out.append({"role": m.role, "content": _text_blocks_from_msg(m)})
 
     return system, out
@@ -184,16 +348,8 @@ def to_anthropic_messages(
 # ---------------------- Tools (norm → Anthropic) ------------------------------
 
 # ---------------------------------------------------------------------------
-# Response-format → virtual tool (Pydantic-first)
+# Response-format → output_config schema (Pydantic-first)
 # ---------------------------------------------------------------------------
-
-
-def _snake(name: str) -> str:
-    import re
-
-    name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
-    name = re.sub(r"[^a-z0-9_]+", "_", name).strip("_")
-    return name or "json"
 
 
 def _pydantic_model_cls(model_or_instance: Any) -> Optional[Type[Any]]:
@@ -206,21 +362,6 @@ def _pydantic_model_cls(model_or_instance: Any) -> Optional[Type[Any]]:
     if isinstance(model_or_instance, PBase):
         return model_or_instance.__class__
     return None
-
-
-def _schema_from_pydantic_model(
-    model_or_instance: Any,
-) -> Optional[Tuple[str, Dict[str, Any]]]:
-    model_cls = _pydantic_model_cls(model_or_instance)
-    if model_cls is None:
-        return None
-    if hasattr(model_cls, "model_json_schema"):  # pydantic v2
-        schema = model_cls.model_json_schema()  # type: ignore[attr-defined]
-    else:  # v1
-        schema = model_cls.schema()  # type: ignore[attr-defined]
-    if not isinstance(schema, dict):
-        raise TypeError("Pydantic schema must be a dict.")
-    return (model_cls.__name__, schema)
 
 
 def _pydantic_validate(model_or_instance: Any, data: Dict[str, Any]) -> Any:
@@ -269,26 +410,29 @@ def _schema_from_pydantic_model(
     return (model_cls.__name__, schema)
 
 
-def response_format_to_normalized_tool(
+def response_format_to_schema(
     rf: Any,
-    *,
-    prefer_name: Optional[str] = None,
-    description_prefix: str = "Outputs structured ",
-) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], str, Type[Any]]]:
+) -> Tuple[Optional[Dict[str, Any]], Optional[Type[Any]]]:
     """
-    -> (normalized_tool_spec, tool_choice, tool_name, pydantic_model_cls)
-    Returns None if rf is not a Pydantic model.
+    Return (json_schema, pydantic_model_cls) for response_format if supported.
     """
+    if rf is None:
+        return None, None
+
     p = _schema_from_pydantic_model(rf)
-    if p is None:
-        return None
-    model_name, schema = p
-    model_cls = _pydantic_model_cls(rf)  # guaranteed non-None here
-    tool_name = prefer_name or f"output_{_snake(model_name)}"
-    description = f"{description_prefix}{model_name}."
-    tool_spec = {"name": tool_name, "description": description, "parameters": schema}
-    tool_choice = {"type": "tool", "name": tool_name}
-    return tool_spec, tool_choice, tool_name, model_cls  # type: ignore[return-value]
+    if p is not None:
+        _, schema = p
+        model_cls = _pydantic_model_cls(rf)
+    else:
+        schema = _schema_from_response_format(rf)
+        model_cls = None
+
+    if schema is None:
+        return None, model_cls
+    if not isinstance(schema, dict):
+        raise TypeError("response_format schema must be a dict.")
+
+    return _transform_schema_for_anthropic(schema), model_cls
 
 
 def _as_plain_dict(obj: Any) -> Dict[str, Any]:
@@ -327,9 +471,17 @@ def to_anthropic_tools(
                 raise ValueError(f"Tool spec missing function.name: {d}")
             description = fn.get("description") or ""
             parameters = fn.get("parameters") or {}
-            out.append(
-                {"name": name, "description": description, "input_schema": parameters}
-            )
+            strict = fn.get("strict")
+            if strict is True and isinstance(parameters, dict):
+                parameters = _transform_schema_for_anthropic(parameters)
+            tool_obj: Dict[str, Any] = {
+                "name": name,
+                "description": description,
+                "input_schema": parameters,
+            }
+            if strict is not None:
+                tool_obj["strict"] = bool(strict)
+            out.append(tool_obj)
             continue
 
         # Simple form
@@ -340,11 +492,25 @@ def to_anthropic_tools(
             d.get("description") or (d.get("function") or {}).get("description") or ""
         )
         parameters = (
-            d.get("parameters") or (d.get("function") or {}).get("parameters") or {}
+            d.get("input_schema")
+            or d.get("parameters")
+            or (d.get("function") or {}).get("input_schema")
+            or (d.get("function") or {}).get("parameters")
+            or {}
         )
-        out.append(
-            {"name": name, "description": description, "input_schema": parameters}
-        )
+        strict = d.get("strict")
+        if strict is None:
+            strict = (d.get("function") or {}).get("strict")
+        if strict is True and isinstance(parameters, dict):
+            parameters = _transform_schema_for_anthropic(parameters)
+        tool_obj: Dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "input_schema": parameters,
+        }
+        if strict is not None:
+            tool_obj["strict"] = bool(strict)
+        out.append(tool_obj)
 
     return out
 
@@ -390,31 +556,16 @@ def build_anthropic_payload(req: ChatRequest) -> Dict[str, Any]:
     if system:
         payload["system"] = system
 
+    # ---- response_format → output_config.format (if provided) ----
+    rf = req.params.get("response_format")
+    rf_schema, _ = response_format_to_schema(rf) if rf is not None else (None, None)
+    if rf_schema is not None:
+        payload["output_config"] = {
+            "format": {"type": "json_schema", "schema": rf_schema}
+        }
+
     # ---- Start with any user-provided tools (normalized) ----
     normalized_tools: List[Dict[str, Any]] = list(req.tools or [])
-
-    # ---- response_format → virtual tool + forced tool_choice (if not explicitly set) ----
-    rf = req.params.get("response_format")
-    forced_tool_choice: Optional[Dict[str, Any]] = None
-
-    rf_result = response_format_to_normalized_tool(rf)
-    if rf_result:
-        rf_tool_spec, rf_tool_choice = rf_result[:2]
-
-        # de-duplicate by tool name
-        existing_names = {
-            (
-                _as_plain_dict(t).get("name")
-                if not isinstance(t, dict)
-                else t.get("name")
-            )
-            for t in normalized_tools
-        }
-        if rf_tool_spec.get("name") not in existing_names:
-            normalized_tools.append(rf_tool_spec)
-
-        # Only force tool_choice if caller didn't set one explicitly
-        forced_tool_choice = rf_tool_choice
 
     # ---- Convert normalized tools → Anthropic shape ----
     tools = to_anthropic_tools(normalized_tools)
@@ -444,14 +595,6 @@ def build_anthropic_payload(req: ChatRequest) -> Dict[str, Any]:
         meta.setdefault("user_id", user)
     if meta:
         payload["metadata"] = meta
-
-    # If response_format added a virtual tool and the caller didn't set tool_choice, force it
-    if (
-        "tool_choice" not in payload
-        and forced_tool_choice is not None
-        and "tool_choice" not in req.params
-    ):
-        payload["tool_choice"] = forced_tool_choice
 
     return payload
 

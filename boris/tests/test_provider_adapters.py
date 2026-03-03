@@ -1,3 +1,4 @@
+# boris/tests/test_provider_adapters.py
 from __future__ import annotations
 
 import logging
@@ -368,3 +369,48 @@ def test_anthropic_chat_skips_parse_when_tool_calls(monkeypatch):
     req = types.SimpleNamespace(params={"response_format": object})
     out = adapter.chat(req)
     assert out.message.content == "not-json"
+
+
+def test_anthropic_chat_does_not_log_payload_body(monkeypatch):
+    anthropic_mod = pytest.importorskip(
+        "boris.boriscore.ai_clients.providers.anthropic.anthropic_adapter"
+    )
+
+    class Messages:
+        def create(self, **_kwargs):
+            return "raw-response"
+
+    adapter = anthropic_mod.AnthropicAdapter(
+        logger=_logger("test.anthropic.chat.logging")
+    )
+    adapter.client = types.SimpleNamespace(messages=Messages())
+
+    logs = []
+
+    def _capture_log(msg: str, log_type: str = "info"):
+        logs.append((msg, log_type))
+
+    payload = {
+        "model": "claude",
+        "max_tokens": 64,
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "top-secret prompt"}],
+            }
+        ],
+    }
+    proto = ChatResponse(message=Msg(role="assistant", content="ok"), tool_calls=[])
+
+    monkeypatch.setattr(adapter, "_log", _capture_log)
+    monkeypatch.setattr(anthropic_mod, "build_anthropic_payload", lambda _req: payload)
+    monkeypatch.setattr(anthropic_mod, "from_anthropic_response", lambda _resp: proto)
+
+    req = types.SimpleNamespace(params={})
+    out = adapter.chat(req)
+
+    assert out is proto
+    log_text = "\n".join(msg for msg, _ in logs)
+    assert "Payload body logging disabled." in log_text
+    assert "top-secret prompt" not in log_text
+    assert '"messages"' not in log_text

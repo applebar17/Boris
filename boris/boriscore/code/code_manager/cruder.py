@@ -103,11 +103,13 @@ class CRUD(CodeProject):
 
         self._log(f"[CRUDer] Retrieving node: {node_id}", "debug")
 
-        node = self.root.find_node(node_id)
+        node_id_low = node_id.lower()
+
+        node = self.root.find_node(node_id_low)
 
         if node is None:
             raise ValueError(
-                f"Node '{node_id}' not found. "
+                f"Node '{node_id}' doesn't exists. "
                 f"Retievable ids: {', '.join(self.ids)}\n"
             )
 

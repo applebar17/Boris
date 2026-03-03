@@ -1,8 +1,9 @@
 # boris/boriscore/code/code_manager/cruder.py
 import logging
+from difflib import get_close_matches
 from pathlib import Path
 from functools import partial
-from typing import Optional, Union, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from boris.boriscore.code.code_manager.code_nodes import ProjectNode
 from boris.boriscore.code.code_manager.code_project import CodeProject
@@ -39,6 +40,94 @@ class CRUD(CodeProject):
                 self.retrieve_node, return_content=return_content, to_emit=True
             ),
         }
+
+    @staticmethod
+    def _normalize_node_id(node_id: str) -> str:
+        raw = str(node_id or "").strip()
+        if raw.startswith("[") and raw.endswith("]"):
+            raw = raw[1:-1].strip()
+        raw = raw.strip("'\" ")
+        raw = raw.replace("\\", "/")
+        while "//" in raw:
+            raw = raw.replace("//", "/")
+        if raw.startswith("./"):
+            raw = raw[2:]
+        if raw.endswith("/") and raw not in {"ROOT", "root"}:
+            raw = raw[:-1]
+        if raw.upper() == "ROOT":
+            return "ROOT"
+        return raw.lower()
+
+    def _closest_node_ids(self, normalized_id: str, limit: int = 5) -> List[str]:
+        ids = [nid for nid in sorted(self.ids) if nid != "ROOT"]
+        if not ids:
+            return []
+
+        target = normalized_id.lower()
+        basename = target.split("/")[-1]
+
+        ranked: List[str] = []
+
+        suffix_hits = [nid for nid in ids if nid.lower().endswith(target)]
+        basename_hits = [nid for nid in ids if nid.lower().endswith(f"/{basename}")]
+
+        for nid in suffix_hits + basename_hits:
+            if nid not in ranked:
+                ranked.append(nid)
+
+        close = get_close_matches(target, [nid.lower() for nid in ids], n=limit, cutoff=0.45)
+        lookup: Dict[str, str] = {nid.lower(): nid for nid in ids}
+        for key in close:
+            nid = lookup.get(key)
+            if nid and nid not in ranked:
+                ranked.append(nid)
+
+        return ranked[:limit]
+
+    def _resolve_node_id(self, node_id: str) -> Tuple[Optional[ProjectNode], str, List[str]]:
+        if self.root is None:
+            return None, node_id, []
+
+        normalized_id = self._normalize_node_id(node_id)
+        ids_map = {nid.lower(): nid for nid in self.ids}
+
+        candidates: List[str] = []
+        for raw in (node_id, normalized_id):
+            if raw and raw not in candidates:
+                candidates.append(raw)
+
+        if normalized_id and normalized_id != "ROOT":
+            if not normalized_id.startswith("root/"):
+                prefixed = f"root/{normalized_id}"
+                if prefixed not in candidates:
+                    candidates.append(prefixed)
+            mapped = ids_map.get(normalized_id)
+            if mapped and mapped not in candidates:
+                candidates.append(mapped)
+            prefixed_mapped = ids_map.get(f"root/{normalized_id}")
+            if prefixed_mapped and prefixed_mapped not in candidates:
+                candidates.append(prefixed_mapped)
+
+        for cid in candidates:
+            found = self.root.find_node(cid)
+            if found is not None:
+                return found, cid, []
+
+        basename = normalized_id.split("/")[-1] if normalized_id else ""
+        if basename:
+            basename_matches = [
+                nid for nid in sorted(self.ids)
+                if nid != "ROOT" and nid.lower().endswith(f"/{basename}")
+            ]
+            if len(basename_matches) == 1:
+                resolved_id = basename_matches[0]
+                found = self.root.find_node(resolved_id)
+                if found is not None:
+                    return found, resolved_id, []
+            if len(basename_matches) > 1:
+                return None, normalized_id, basename_matches[:5]
+
+        return None, normalized_id, self._closest_node_ids(normalized_id, limit=5)
 
     # -----------------------------------------------------------
     # CRUD operations
@@ -103,14 +192,23 @@ class CRUD(CodeProject):
 
         self._log(f"[CRUDer] Retrieving node: {node_id}", "debug")
 
-        node_id_low = node_id.lower()
-
-        node = self.root.find_node(node_id_low)
+        node, resolved_id, suggestions = self._resolve_node_id(node_id)
 
         if node is None:
+            if suggestions:
+                raise ValueError(
+                    f"Node '{node_id}' not found. "
+                    f"Closest ids: {', '.join(suggestions)}"
+                )
             raise ValueError(
-                f"Node '{node_id}' doesn't exists. "
-                f"Retievable ids: {', '.join(self.ids)}\n"
+                f"Node '{node_id}' not found after normalization '{resolved_id}'. "
+                "Use an exact node id from the project tree."
+            )
+
+        if resolved_id != node_id:
+            self._log(
+                f"[CRUDer] Resolved node id '{node_id}' -> '{resolved_id}'",
+                "debug",
             )
 
         if return_content and node.is_file:
@@ -141,7 +239,6 @@ class CRUD(CodeProject):
         scope: Optional[str] = None,
         language: Optional[str] = None,
         commit_message: Optional[str] = None,
-        updated_file: Optional[str] = None,
         new_parent_id: Optional[str] = None,
     ) -> Tuple[ProjectNode, str]:
 
@@ -206,7 +303,6 @@ class CRUD(CodeProject):
             scope=scope,
             language=language,
             commit_message=commit_message,
-            node_content=updated_file,
             id=new_id,
         )
 

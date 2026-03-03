@@ -1,3 +1,4 @@
+# boris/boriscore/ai_clients/providers/openai/utils.py
 import json
 from typing import Any, Dict, List, Optional, Union, Mapping, Sequence
 from dataclasses import is_dataclass, asdict
@@ -438,10 +439,18 @@ def _from_openai_response(resp: ChatCompletion) -> "ChatResponse":
             total_tokens=getattr(u, "total_tokens", 0) or 0,
         )
 
+    raw_summary = {
+        "id": getattr(resp, "id", None),
+        "model": getattr(resp, "model", None),
+        "object": getattr(resp, "object", None),
+        "finish_reason": choice.finish_reason,
+        "tool_call_count": len(tool_calls),
+    }
+
     return ChatResponse(
         message=assistant,
         tool_calls=tool_calls,
         usage=usage,
         finish_reason=choice.finish_reason,
-        raw=resp,
+        raw=raw_summary,
     )

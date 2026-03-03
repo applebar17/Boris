@@ -1,3 +1,4 @@
+# boris/boriscore/toolbox_mngmnt/toolbox.py
 from boris.boriscore.ai_clients.protocols.protocol_chat import ToolSpec
 
 from boris.boriscore.toolbox_mngmnt.agent import INVOKE_AI_AGENT
@@ -19,4 +20,5 @@ from boris.boriscore.toolbox_mngmnt.node_crud import (
     RENDER_NODE_NUMBERED,
     PREPEND_NODE_LINES,
     REPLACE_NODE_LINES,
+    APPLY_NODE_PATCH,
 )

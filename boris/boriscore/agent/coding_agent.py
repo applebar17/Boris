@@ -79,6 +79,8 @@ class CodingAgent(DiskManager):
         # Allowed tool names (contract for the agent)
         self.code_writer_allowed_tools: List[str] = [
             "retrieve_node",
+            "read_node_lines",
+            "apply_node_patch",
             "create_node",
             "update_node",
             "delete_node",
@@ -180,6 +182,8 @@ class CodingAgent(DiskManager):
             "retrieve_node": partial(
                 self.retrieve_node, return_content=True, to_emit=True
             ),
+            "read_node_lines": self.read_node_lines,
+            "apply_node_patch": self.apply_node_patch,
             "delete_node": self.delete_node,
             "run_terminal_commands": self.run_terminal_tool,
         }
@@ -193,6 +197,7 @@ class CodingAgent(DiskManager):
         else:
             self.code_writer_tools_mapping = {
                 **base_map,
+                "apply_node_patch": partial(self.apply_node_patch, dry_run=True),
                 "create_node": self.create_node,
                 "update_node": self.update_node,
             }

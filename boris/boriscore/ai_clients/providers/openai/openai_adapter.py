@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 import logging
+import warnings
 from typing import List, Optional, Union
 
 # ----- openai -----
@@ -136,7 +137,15 @@ class OpenAIAdapter(LLMProviderAdapter):
         parent_headers = get_trace_parent_headers()
         with tracing_context(parent=parent_headers):
             if use_parse:
-                resp: ChatCompletion = self.client.beta.chat.completions.parse(**payload)
+                # OpenAI parsed outputs can emit noisy Pydantic serializer warnings
+                # for `message.parsed` even when outputs are valid.
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r"PydanticSerializationUnexpectedValue.*field_name='parsed'",
+                        category=UserWarning,
+                    )
+                    resp: ChatCompletion = self.client.beta.chat.completions.parse(**payload)
             else:
                 resp: ChatCompletion = self.client.chat.completions.create(**payload)
 

@@ -174,24 +174,28 @@ def tracing_context(parent: Mapping[str, Any] | None = None) -> Iterator[None]:
         yield
         return
 
-    try:
-        if parent:
-            with _ls_tracing_context(parent=parent):
-                yield
-        else:
-            with _ls_tracing_context():
-                yield
-        return
-    except TypeError:
-        pass
-    except Exception:
+    context = None
+    if parent:
+        try:
+            context = _ls_tracing_context(parent=parent)
+        except TypeError:
+            try:
+                context = _ls_tracing_context(parent_run=parent)
+            except Exception:
+                context = None
+        except Exception:
+            context = None
+    else:
+        try:
+            context = _ls_tracing_context()
+        except Exception:
+            context = None
+
+    if context is None:
         yield
         return
 
-    try:
-        with _ls_tracing_context(parent_run=parent):
-            yield
-    except Exception:
+    with context:
         yield
 
 

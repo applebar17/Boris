@@ -92,6 +92,32 @@ def test_coding_toolbox_exposes_patch_tools():
     assert "apply_node_patch" in TOOLBOX
 
 
+
+
+def test_update_node_tool_schema_is_metadata_only():
+    pytest.importorskip("openai.types.chat.parsed_chat_completion")
+    from boris.boriscore.toolbox_mngmnt.project_crud import UPDATE_NODE
+
+    fn = UPDATE_NODE["function"]
+    params = fn["parameters"]
+
+    assert fn["name"] == "update_node"
+    assert "updated_file" not in params["properties"]
+    assert params["required"] == [
+        "node_id",
+        "new_name",
+        "description",
+        "scope",
+        "language",
+        "commit_message",
+        "new_parent_id",
+    ]
+
+
+def test_code_gen_prompt_declares_update_node_metadata_only():
+    assert "never for code edits" in CODE_GEN
+
+
 def test_apply_node_patch_tool_schema_contract():
     pytest.importorskip("openai.types.chat.parsed_chat_completion")
     from boris.boriscore.toolbox_mngmnt.node_crud import APPLY_NODE_PATCH

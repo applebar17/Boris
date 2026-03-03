@@ -1,9 +1,7 @@
+# boris/boriscore/toolbox_mngmnt/node_crud.py
 from boris.boriscore.ai_clients.protocols.protocol_chat import ToolSpec
 
-# ──────────────────────────────────────────────────────────────────────────────
-# READ
-# ──────────────────────────────────────────────────────────────────────────────
-
+# Read tools
 GET_NODE_METADATA = ToolSpec(
     type="function",
     function={
@@ -19,7 +17,7 @@ GET_NODE_METADATA = ToolSpec(
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.get_metadata()
+)
 
 GET_NODE_CONTENT = ToolSpec(
     type="function",
@@ -36,13 +34,13 @@ GET_NODE_CONTENT = ToolSpec(
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.get_content()
+)
 
 READ_NODE_LINES = ToolSpec(
     type="function",
     function={
         "name": "read_node_lines",
-        "description": "Read a 1-based inclusive window of lines. Use before editing to plan precise ranges.",
+        "description": "Purpose: fetch a precise line window for safe code edits. Returns snapshot_sha to guard against stale patches.",
         "strict": True,
         "parameters": {
             "type": "object",
@@ -64,11 +62,11 @@ READ_NODE_LINES = ToolSpec(
                     "description": "Include a short per-line content hash for lightweight anchoring.",
                 },
             },
-            "required": ["node_id", "start", "end"],
+            "required": ["node_id", "start", "end", "include_sha"],
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.read_lines(start, end, include_sha)
+)
 
 RENDER_NODE_NUMBERED = ToolSpec(
     type="function",
@@ -97,16 +95,13 @@ RENDER_NODE_NUMBERED = ToolSpec(
                     "description": "If null, follow node style; otherwise force final newline on/off for the rendered text.",
                 },
             },
-            "required": ["node_id"],
+            "required": ["node_id", "pad", "eol", "include_trailing_newline"],
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.render_numbered(...)
+)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# UPDATE: WHOLE CONTENT
-# ──────────────────────────────────────────────────────────────────────────────
-
+# Whole-content update tool (fallback)
 SET_NODE_CONTENT = ToolSpec(
     type="function",
     function={
@@ -127,16 +122,13 @@ SET_NODE_CONTENT = ToolSpec(
                     "description": "If true, adopt the node's existing EOL/BOM/trailing newline when writing.",
                 },
             },
-            "required": ["node_id", "text"],
+            "required": ["node_id", "text", "preserve_style"],
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.set_content(text, preserve_style)
+)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# CREATE / UPDATE / DELETE: LINE-RANGE OPERATIONS
-# ──────────────────────────────────────────────────────────────────────────────
-
+# Line-range tools
 INSERT_NODE_LINES = ToolSpec(
     type="function",
     function={
@@ -164,11 +156,11 @@ INSERT_NODE_LINES = ToolSpec(
                     "description": "Where to insert relative to the anchor line.",
                 },
             },
-            "required": ["node_id", "line", "new"],
+            "required": ["node_id", "line", "new", "position"],
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.insert_lines(line, new, position)
+)
 
 REPLACE_NODE_LINES = ToolSpec(
     type="function",
@@ -200,7 +192,7 @@ REPLACE_NODE_LINES = ToolSpec(
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.replace_lines(start, end, new)
+)
 
 DELETE_NODE_LINES = ToolSpec(
     type="function",
@@ -227,7 +219,7 @@ DELETE_NODE_LINES = ToolSpec(
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.delete_lines(start, end)
+)
 
 APPEND_NODE_LINES = ToolSpec(
     type="function",
@@ -249,7 +241,7 @@ APPEND_NODE_LINES = ToolSpec(
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.append_lines(new)
+)
 
 PREPEND_NODE_LINES = ToolSpec(
     type="function",
@@ -271,9 +263,71 @@ PREPEND_NODE_LINES = ToolSpec(
             "additionalProperties": False,
         },
     },
-)  # → NodeCRUD.prepend_lines(new)
+)
 
-# Optional convenience: export a registry for easy inclusion
+APPLY_NODE_PATCH = ToolSpec(
+    type="function",
+    function={
+        "name": "apply_node_patch",
+        "description": "Purpose: edit code via ordered line operations (insert/replace/delete). Requires snapshot_sha from read_node_lines for stale-edit protection.",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "Target file node id."},
+                "snapshot_sha": {
+                    "type": "string",
+                    "description": "Snapshot anchor returned by read_node_lines.",
+                },
+                "ops": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Patch operations applied in declared order. For unused fields in a specific op, pass null.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op": {
+                                "type": "string",
+                                "enum": ["insert", "replace", "delete"],
+                            },
+                            "line": {
+                                "type": ["integer", "null"],
+                                "minimum": 1,
+                            },
+                            "start": {
+                                "type": ["integer", "null"],
+                                "minimum": 1,
+                            },
+                            "end": {
+                                "type": ["integer", "null"],
+                                "minimum": 1,
+                            },
+                            "position": {
+                                "type": ["string", "null"],
+                                "enum": ["before", "after", None],
+                            },
+                            "new": {
+                                "type": ["array", "null"],
+                                "minItems": 1,
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "required": ["op", "line", "start", "end", "position", "new"],
+                        "additionalProperties": False,
+                    },
+                },
+                "commit_message": {
+                    "type": ["string", "null"],
+                    "default": None,
+                    "description": "Optional commit message metadata for this patch.",
+                },
+            },
+            "required": ["node_id", "snapshot_sha", "ops", "commit_message"],
+            "additionalProperties": False,
+        },
+    },
+)
+
 NODECRUD_TOOLS = [
     GET_NODE_METADATA,
     GET_NODE_CONTENT,
@@ -285,4 +339,5 @@ NODECRUD_TOOLS = [
     DELETE_NODE_LINES,
     APPEND_NODE_LINES,
     PREPEND_NODE_LINES,
+    APPLY_NODE_PATCH,
 ]

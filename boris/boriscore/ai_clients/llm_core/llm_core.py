@@ -124,6 +124,24 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
             "debug",
         )
 
+    @staticmethod
+    def _is_retrieve_node_not_found_error(tool_name: Optional[str], result_obj: Any) -> bool:
+        if tool_name != "retrieve_node":
+            return False
+        if not isinstance(result_obj, dict):
+            return False
+        err = str(result_obj.get("error") or "").lower()
+        if not err:
+            return False
+        markers = (
+            "not found",
+            "doesn't exists",
+            "closest ids",
+            "normalization",
+            "exact node id",
+        )
+        return any(marker in err for marker in markers)
+
     @traceable(name="llm_core.handle_params", run_type="prompt")
     def handle_params(
         self,
@@ -301,6 +319,8 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                 repeat_cap=self.tool_repeat_cap,
                 sig_counts=Counter(),
                 tool_call_records=[],
+                retrieve_not_found_count=0,
+                retrieve_not_found_cap=2,
             )
 
         # Tool round cap preflight
@@ -386,6 +406,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         )
 
         # Execute tools sequentially with repeat guard
+        disable_due_to_missing_nodes = False
         for tc in tool_calls:
             name = tc.function.name
             raw_args = tc.function.arguments
@@ -466,6 +487,21 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                         result_ok = False
                         result_obj_for_summary = out
 
+            if self._is_retrieve_node_not_found_error(name, out):
+                _state["retrieve_not_found_count"] = (
+                    _state.get("retrieve_not_found_count", 0) + 1
+                )
+                if _state["retrieve_not_found_count"] >= _state.get(
+                    "retrieve_not_found_cap", 2
+                ):
+                    disable_due_to_missing_nodes = True
+                    self._log(
+                        f"[{log_name_main}.tools_handle] Repeated missing retrieve_node ids; disabling tools for this turn.",
+                        "warn",
+                    )
+            elif name == "retrieve_node" and result_ok:
+                _state["retrieve_not_found_count"] = 0
+
             # Serialize tool result for the model, clamp to model budget
             out_str = self._protocol_result_to_str(out)
             out_str = self._clamp_for_model(out_str, model_name)
@@ -505,6 +541,23 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                     f"[{log_name_main}.tools_handle.protocol] Failed to record ToolCallRecord: {e}",
                     "warn",
                 )
+
+            if disable_due_to_missing_nodes:
+                break
+
+        if disable_due_to_missing_nodes:
+            req.tools = None
+            req.params.pop("parallel_tool_calls", None)
+            req.messages.append(
+                Msg(
+                    role="assistant",
+                    content=(
+                        "Repeated retrieve_node misses detected. "
+                        "Stop guessing node ids and continue with available context "
+                        "or use exact ids from previous suggestions."
+                    ),
+                )
+            )
 
         # Post-tools: enforce budget; disable tools if tight
         self._ensure_context_budget_norm(req)

@@ -1,14 +1,10 @@
+﻿# boris/boriscore/agent/models.py
 from __future__ import annotations
 
-from typing import List, Optional, Union, Annotated, Literal
 from enum import Enum
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-
-
-# Reasoning
-
-# ---------- Enums ----------
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Operation(str, Enum):
@@ -22,9 +18,6 @@ class Operation(str, Enum):
     TERMINAL_COMMANDS = "terminal-command"
 
 
-# ---------- Primitives ----------
-
-
 class RelevantFiles(BaseModel):
     """A single minimally-required file to retrieve before editing/creating."""
 
@@ -35,14 +28,13 @@ class RelevantFiles(BaseModel):
 
     @field_validator("id")
     @classmethod
-    def path_cannot_be_root(cls, v: str) -> str:
+    def path_cannot_be_root(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
         bad = {"", ".", "/", "\\", "./", ".\\", "../", "..\\", "root"}
-        if v.strip() in bad:
+        if v.strip().lower() in bad:
             raise ValueError("path must not point to the project root")
         return v
-
-
-# ---------- Discriminated Union: Action vs. Blocked ----------
 
 
 class Action(BaseModel):
@@ -53,42 +45,29 @@ class Action(BaseModel):
     """
 
     kind: Literal["action"] = "action"
-
-    intent: str = Field(
-        ..., description="Short description of what this action achieves"
-    )
+    intent: str = Field(..., description="Short description of what this action achieves")
     operation: Operation
-
     files_to_retrieve: List[RelevantFiles] = Field(
         default_factory=list,
         description="Relevant dependent context files (at least: target and 1 to 3 integration points, etc.). Maximum 10 files.",
     )
-
     target_path: str = Field(
         ...,
         description="Exact file path to update or create (also set for retrieve ops)",
     )
-
     edit_sketch: List[str] = Field(
         ...,
         description="Concrete edit bullets (functions, classes, imports, keys, etc.)",
         min_length=1,
     )
 
-    # expected_outcome: List[str] = Field(
-    #     ...,
-    #     description="5–15 lines of pseudocode describing the resulting flow/API surface/code content",
-    #     min_length=1,
-    #     max_length=20,
-    # )
-
-    # ---- Validators ----
-
     @field_validator("target_path")
     @classmethod
-    def target_cannot_be_root(cls, v: str) -> str:
+    def target_cannot_be_root(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            raise ValueError("target_path must be provided")
         bad = {"", ".", "/", "\\", "./", ".\\", "../", "..\\", "root"}
-        if v.strip() in bad:
+        if v.strip().lower() in bad:
             raise ValueError("target_path must not be the project root")
         return v
 
@@ -109,7 +88,6 @@ class BlockedAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["blocked"] = "blocked"
-
     intent: str = Field(..., description="Short description of the intended change")
     blocked_reason: str = Field(
         ..., description="Why this is blocked (e.g., requires root-level change)"
@@ -119,11 +97,7 @@ class BlockedAction(BaseModel):
     )
 
 
-PlanItem = (
-    Action  # Annotated[Union[Action, BlockedAction], Field(discriminator="kind")]
-)
-
-# ---------- Top-level Plan ----------
+PlanItem = Action
 
 
 class ReasoningPlan(BaseModel):
@@ -136,18 +110,13 @@ class ReasoningPlan(BaseModel):
         ...,
         min_length=1,
         description="Ordered plan of items (Coding Actions).",
-    )  # List[PlanItem]
-
+    )
     constraints: Optional[str] = Field(
         None, description="Any special rules/preferences provided by the user"
     )
 
 
-# ------- Action Planning ---------
-
-
 class ActionPlanningOutput(BaseModel):
-
     detailed_coding_plan: str = Field(
-        description="Detailed coding plan, including psudocode, logic explanation and all additional relevant information for a software developer to have for working on the same request."
+        description="Detailed coding plan, including pseudocode, logic explanation and all additional relevant information for a software developer to have for working on the same request."
     )

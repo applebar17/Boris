@@ -79,7 +79,7 @@ class CodeProject(LLMInterface, TerminalExecutor):
 
     def _generate_node_id(self, parent: ProjectNode, filename: str):
         id_char_separator = "/"
-        return f"{parent.id.lower()}{id_char_separator}{filename.lower()}"
+        return f"{parent.id}{id_char_separator}{filename}"
 
     def _log(self, msg: str, log_type: str = "info") -> None:
         log_msg(self.logger, msg, log_type=log_type)
@@ -332,10 +332,10 @@ class CodeProject(LLMInterface, TerminalExecutor):
         marker = "FILE" if node.is_file else "DIR"
         marker = ""
         if description:
-            line = f"{prefix}{connector}{marker} [{node.id}]: {node.description}\n"
+            line = f"{prefix}{connector}{marker} {node.id}: {node.description}\n"
 
         else:
-            line = f"{prefix}{connector}{marker} [{node.id}]\n"
+            line = f"{prefix}{connector}{marker} {node.id}\n"
         new_prefix = f"{prefix}{'    ' if is_last else '│   '}"
         for idx, ch in enumerate(node.children):
             line += self._render_tree(

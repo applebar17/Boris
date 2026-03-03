@@ -12,6 +12,7 @@ from boris.boriscore.code.code_manager.utils.utils_cp import (
     _should_read,
 )
 from boris.boriscore.code.code_manager.code_nodes import ProjectNode
+from boris.boriscore.code.code_manager.node_crud import NodeCRUD
 from boris.boriscore.code.code_manager.cruder import CRUD
 from boris.boriscore.ai_clients.protocols.protocol_chat import (
     ChatResponse,
@@ -68,7 +69,7 @@ class DiskManager(CRUD):
     @staticmethod
     def _needs_description(node: ProjectNode) -> bool:
         desc = (node.description or "").strip().lower()
-        return node.is_file and desc in {"", "unknown", "unable to parse metadata"}
+        return node.is_file and desc in {"", None}
 
     @traceable(name="disk_manager.describe_node_if_missing", run_type="tool")
     def _describe_node_if_missing(self, node: ProjectNode) -> None:
@@ -135,6 +136,66 @@ class DiskManager(CRUD):
 
         return node.model_dump(deep=False) if dump else node
 
+    @traceable(name="disk_manager.read_node_lines", run_type="tool")
+    def read_node_lines(
+        self,
+        node_id: str,
+        *,
+        start: int = 1,
+        end: Optional[int] = None,
+        include_sha: bool = True,
+    ) -> dict:
+        """
+        Read a file line window and return the current snapshot anchor.
+        """
+        node: ProjectNode = self.retrieve_node(node_id, dump=False)
+        if not node.is_file:
+            raise ValueError("read_node_lines is only available for file nodes.")
+
+        self._ensure_file_content_loaded(node)
+        editable = NodeCRUD.adopt(node)
+        return editable.read_lines(start=start, end=end, include_sha=include_sha)
+
+    @traceable(name="disk_manager.apply_node_patch", run_type="tool")
+    def apply_node_patch(
+        self,
+        node_id: str,
+        *,
+        snapshot_sha: str,
+        ops: list,
+        commit_message: Optional[str] = None,
+        dst: Optional[Path] = None,
+        dry_run: bool = False,
+        on_event: Optional[Callable[[str, Path], None]] = None,
+    ) -> dict:
+        """
+        Apply ordered line-patch operations guarded by snapshot_sha, then persist.
+        """
+        node: ProjectNode = self.retrieve_node(node_id, dump=False)
+        if not node.is_file:
+            raise ValueError("apply_node_patch is only available for file nodes.")
+
+        self._ensure_file_content_loaded(node)
+        editable = NodeCRUD.adopt(node)
+        result = editable.apply_patch_ops(snapshot_sha=snapshot_sha, ops=ops)
+
+        if commit_message is not None:
+            node.update(commit_message=commit_message)
+
+        root_dst = self._root_dst(dst)
+        if not root_dst.exists() and not dry_run:
+            root_dst.mkdir(parents=True, exist_ok=True)
+            self._emit("created dir", root_dst, on_event)
+
+        self.write_to_disk(
+            dst=root_dst,
+            only_node_id=node.id,
+            dry_run=dry_run,
+            on_event=on_event,
+        )
+
+        return result
+
     # -----------------------------------------------------------
     # CRUD on disk
     # -----------------------------------------------------------
@@ -149,7 +210,6 @@ class DiskManager(CRUD):
         scope: Optional[str] = None,
         language: Optional[str] = None,
         commit_message: Optional[str] = None,
-        updated_file: Optional[str] = None,
         new_parent_id: Optional[str] = None,
         dst: Optional[Path] = None,
         dry_run: bool = False,
@@ -173,7 +233,6 @@ class DiskManager(CRUD):
             scope=scope,
             language=language,
             commit_message=commit_message,
-            updated_file=updated_file,
             new_parent_id=new_parent_id,
         )
 
@@ -405,9 +464,9 @@ class DiskManager(CRUD):
             self._log("[code.disk_manager] Successfully described code!")
         except Exception:
             parsed = FileDiskMetadata(
-                description="unable to parse metadata",
-                scope="unknown",
-                coding_language="unknown",
+                description=None,
+                scope=None,
+                coding_language=None,
             )
             self._log(
                 f"[code.disk_manager] Failed to describe code for file {file_name}.",

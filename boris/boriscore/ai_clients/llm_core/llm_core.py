@@ -1,4 +1,4 @@
-# boris/boriscore/ai_clients/client_oai.py
+# boris/boriscore/ai_clients/llm_core/llm_core.py
 from __future__ import annotations
 
 import json
@@ -32,6 +32,12 @@ from boris.boriscore.ai_clients.providers.registry import (
 from boris.boriscore.ai_clients.protocols.protocol_tools import (  # your protocol module
     ToolResultBase,
     ToolCallRecord,
+)
+from boris.boriscore.utils.tracing import (
+    traceable,
+    set_trace_metadata,
+    get_trace_parent_headers,
+    tracing_context,
 )
 
 # Tooling guard knobs (can be tweaked per instance)
@@ -118,6 +124,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
             "debug",
         )
 
+    @traceable(name="llm_core.handle_params", run_type="prompt")
     def handle_params(
         self,
         system_prompt: str,
@@ -248,6 +255,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
 
         return req
 
+    @traceable(name="llm_core.call", run_type="chain")
     def call(
         self,
         req: ChatRequest,
@@ -270,6 +278,14 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         self._log(
             f"[{log_name_main}.call] Turn routing: kind={kind} → provider={provider_for_turn} model={model_for_turn}",
             "debug",
+        )
+
+        set_trace_metadata(
+            model_kind=kind,
+            provider=provider_for_turn,
+            model=model_for_turn,
+            session_id=(req.params or {}).get("session_id") or (req.params or {}).get("user"),
+            user_id=(req.params or {}).get("user"),
         )
 
         # Initialize runtime guards and budget
@@ -305,7 +321,9 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
 
         # Provider call using the routed adapter
         adapter = self._get_adapter_for_provider(provider_for_turn)
-        resp: ChatResponse = adapter.chat(req)
+        parent_headers = get_trace_parent_headers()
+        with tracing_context(parent=parent_headers):
+            resp: ChatResponse = adapter.chat(req)
 
         # No tool calls requested (or no mapping to satisfy them)
         if not (tools_mapping and req.tools and getattr(resp, "tool_calls", None)):
@@ -320,6 +338,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
             req, resp.tool_calls, tools_mapping, _state=_state
         )
 
+    @traceable(name="llm_core.handle_tool_calling", run_type="tool")
     def handle_tool_calling(
         self,
         req: ChatRequest,
@@ -412,7 +431,8 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                 else:
                     try:
                         try:
-                            out_obj = fn(**parsed_kwargs)
+                            with tracing_context(parent=get_trace_parent_headers()):
+                                out_obj = fn(**parsed_kwargs)
                             self._log(
                                 f"[{log_name_main}.tools_handle] Tool {fn.func.__name__} executed.",
                                 "debug",
@@ -424,11 +444,12 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                                 "debug",
                             )
                             arg_cls = self._protocol_arg_cls_for(name)
-                            out_obj = (
-                                fn(arg_cls.from_dict(raw_args))
-                                if arg_cls
-                                else fn(parsed_kwargs)
-                            )
+                            with tracing_context(parent=get_trace_parent_headers()):
+                                out_obj = (
+                                    fn(arg_cls.from_dict(raw_args))
+                                    if arg_cls
+                                    else fn(parsed_kwargs)
+                                )
 
                         result_ok = (
                             out_obj.ok

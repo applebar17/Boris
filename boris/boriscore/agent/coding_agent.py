@@ -1,3 +1,4 @@
+# boris/boriscore/agent/coding_agent.py
 import os
 import json
 import logging
@@ -9,7 +10,7 @@ from dotenv import load_dotenv
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionUserMessageParam,
 )
-from langsmith import traceable
+from boris.boriscore.utils.tracing import traceable
 from boris.boriscore.code.code_manager.disk_manager import DiskManager
 from boris.boriscore.agent.prompts import (
     REASONING,
@@ -323,7 +324,7 @@ class CodingAgent(DiskManager):
 
     # -------------------- agent pipelines --------------------
 
-    @traceable
+    @traceable(name="coding_agent.action_planner", run_type="chain")
     def action_planner(
         self,
         action: Action,
@@ -387,7 +388,7 @@ class CodingAgent(DiskManager):
 
         return parsed
 
-    @traceable
+    @traceable(name="coding_agent.reasoning_step", run_type="chain")
     def reasoning_step(
         self, chat_message: Union[str, list], user: Optional[str] = None
     ) -> ReasoningPlan:
@@ -453,7 +454,7 @@ class CodingAgent(DiskManager):
             # Bubble up a clear exception; callers can catch and reply.
             raise
 
-    @traceable
+    @traceable(name="coding_agent.generate_files_chat", run_type="chain")
     def generate_files_chat(
         self,
         reasoning_output: ReasoningPlan,
@@ -549,7 +550,7 @@ class CodingAgent(DiskManager):
         self._log("[agent] Returning final summary of the actions to the chatbot.")
         return summary
 
-    @traceable
+    @traceable(name="coding_agent.invoke_agent", run_type="chain")
     def invoke_agent(
         self,
         chat_history: Union[str, list],
@@ -558,8 +559,6 @@ class CodingAgent(DiskManager):
     ) -> str:
         """One-shot: reason → generate → summarize."""
 
-        # Sync first always
-        self.sync_with_disk(ai_enrichment_metadata_pipe=False, remove_missing=True)
         self._log("[agent] Agent message received.")
         plan = self.reasoning_step(chat_message=chat_history, user=user)
         # return self.generate_files_chat(

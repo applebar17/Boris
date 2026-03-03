@@ -1,4 +1,4 @@
-# boris/boriscore/ai_clients/client_oai.py
+# boris/boriscore/ai_clients/llm_core/llm_base.py
 from __future__ import annotations
 
 import os
@@ -26,6 +26,7 @@ from boris.boriscore.ai_clients.utils.utils import (
     _non_empty_items,
     _clean_val,
 )
+from boris.boriscore.utils.tracing import traceable
 
 
 log_name_main = "llm_interface_base"
@@ -254,11 +255,21 @@ class LLMInterfaceBase:
         for note in self._deprecation_notes:
             self._log(f"[env][deprecated] {note}", "info")
 
-        try:
-            self.tracing = bool(_val("BORIS_TRACING"))
-        except:
-            self.tracing = False
+        tracing_raw = _val("BORIS_TRACING")
+        if tracing_raw is None:
+            self.tracing = bool(_val("LANGSMITH_API_KEY"))
+        else:
+            low = tracing_raw.lower()
+            if low in {"1", "true", "yes", "on"}:
+                self.tracing = True
+            elif low in {"0", "false", "no", "off"}:
+                self.tracing = False
+            else:
+                self.tracing = bool(tracing_raw)
 
+        self._log(f"[env] tracing_enabled={self.tracing}", "debug")
+
+    @traceable(name="llm_base.get_adapter_for_provider", run_type="chain")
     def _get_adapter_for_provider(self, provider: str) -> LLMProviderAdapter:
         """
         Return a ready-to-use adapter instance for `provider`, creating it (and its client)
@@ -428,6 +439,7 @@ class LLMInterfaceBase:
             # Anthropic
             anthropic_api_key=self.anthropic_api_key,
             anthropic_base_url=self.anthropic_base_url,
+            tracing_enabled=bool(getattr(self, "tracing", False)),
         )
 
     def _ensure_adapter_for_provider(self, provider: str) -> LLMProviderAdapter:

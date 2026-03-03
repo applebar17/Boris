@@ -1,4 +1,4 @@
-# boris/boriscore/ai_clients/providers/openai_adapter.py
+# boris/boriscore/ai_clients/providers/openai/openai_adapter.py
 from __future__ import annotations
 import os
 import logging
@@ -21,6 +21,17 @@ from boris.boriscore.ai_clients.providers.openai.utils import (
     _wants_structured_output,
     _from_openai_response,
     _build_openai_payload,
+)
+
+try:
+    from langsmith.wrappers import wrap_openai
+except Exception:  # pragma: no cover
+    wrap_openai = None
+
+from boris.boriscore.utils.tracing import (
+    traceable,
+    get_trace_parent_headers,
+    tracing_context,
 )
 
 
@@ -84,13 +95,28 @@ class OpenAIAdapter(LLMProviderAdapter):
             raise ValueError(
                 "[adapters.openai] Missing OPENAI_API_KEY for OpenAI provider."
             )
-        self.client = OpenAI(api_key=cfg.openai_api_key, base_url=cfg.openai_base_url)
+
+        raw_client = OpenAI(api_key=cfg.openai_api_key, base_url=cfg.openai_base_url)
+        self.client = raw_client
+
+        if wrap_openai and cfg.tracing_enabled:
+            try:
+                self.client = wrap_openai(raw_client)
+                self._log("[adapters.openai] LangSmith tracing wrapper enabled.", "debug")
+            except Exception as e:
+                self._log(
+                    f"[adapters.openai] Failed to wrap OpenAI client for tracing: {e}",
+                    "warning",
+                )
+                self.client = raw_client
+
         self.openai_embeddings_client = self.client
         return self.client
 
     def describe(self, cfg: ProviderConfig) -> str:
         return f"OpenAI(base_url={cfg.openai_base_url})"
 
+    @traceable(name="openai_adapter.chat", run_type="chain")
     def chat(self, req: "ChatRequest") -> "ChatResponse":
         """
         Execute a chat completion with optional function tools and structured output.
@@ -107,16 +133,19 @@ class OpenAIAdapter(LLMProviderAdapter):
         )
 
         self._log(f"[adapters.openai] Model from payload: {payload['model']}", "debug")
-        if use_parse:
-            resp: ChatCompletion = self.client.beta.chat.completions.parse(**payload)
-        else:
-            resp: ChatCompletion = self.client.chat.completions.create(**payload)
+        parent_headers = get_trace_parent_headers()
+        with tracing_context(parent=parent_headers):
+            if use_parse:
+                resp: ChatCompletion = self.client.beta.chat.completions.parse(**payload)
+            else:
+                resp: ChatCompletion = self.client.chat.completions.create(**payload)
 
         protocol_resp = _from_openai_response(resp)
         self._log(f"[adapters.openai] Response protocolized.", "debug")
 
         return protocol_resp
 
+    @traceable(name="openai_adapter.get_embeddings", run_type="embedding")
     def get_embeddings(
         self, content: Union[str, List[str]], dimensions: int = 1536
     ) -> CreateEmbeddingResponse:

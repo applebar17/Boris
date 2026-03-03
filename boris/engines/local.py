@@ -1,10 +1,18 @@
 # boris/engines/local.py
 from __future__ import annotations
+import os
 import pathlib
 import logging
 from typing import Optional
 from functools import partial
-from boris.boriscore.utils.tracing import traceable
+from boris import __version__
+from boris.boriscore.utils.tracing import (
+    traceable,
+    process_inputs,
+    process_outputs,
+    set_trace_metadata,
+    set_trace_name,
+)
 from boris.boriscore.utils.utils import log_msg
 from boris.engines.toolbox import TOOLBOX
 from boris.boriscore.code.code_manager.disk_manager import DiskManager
@@ -133,7 +141,12 @@ class LocalEngine:
     # ──────────────────────────────────────────────────────────────────────────
     # Chat API
     # ──────────────────────────────────────────────────────────────────────────
-    @traceable(name="local_engine.chat_local_engine", run_type="chain")
+    @traceable(
+        name="local_engine.chat_local_engine",
+        run_type="chain",
+        process_inputs=process_inputs,
+        process_outputs=process_outputs,
+    )
     def chat_local_engine(self, history: list[dict], user: str) -> dict:
         """
         Execute one round of chat against the local agent.
@@ -147,6 +160,17 @@ class LocalEngine:
               - "answer" is the assistant reply text
               - "project" is a JSON-serializable snapshot of the current CodeProject
         """
+        request_id = f"{user}:{len(history)}"
+        set_trace_name("boris.chat.turn")
+        set_trace_metadata(
+            request_id=request_id,
+            session_id=user,
+            user_id=user,
+            env=os.getenv("BORIS_ENV", "local"),
+            service="boris-cli",
+            version=__version__,
+        )
+
         # Ensure a root exists (defensive; should be set by _bootstrap_project_tree)
         if self.ca.root is None:
             self._bootstrap_project_tree()

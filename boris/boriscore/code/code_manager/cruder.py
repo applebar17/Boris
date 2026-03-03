@@ -1,3 +1,4 @@
+# boris/boriscore/code/code_manager/cruder.py
 import logging
 from pathlib import Path
 from functools import partial
@@ -5,6 +6,7 @@ from typing import Optional, Union, Tuple
 
 from boris.boriscore.code.code_manager.code_nodes import ProjectNode
 from boris.boriscore.code.code_manager.code_project import CodeProject
+from boris.boriscore.utils.tracing import traceable
 
 
 class CRUD(CodeProject):
@@ -42,6 +44,7 @@ class CRUD(CodeProject):
     # CRUD operations
     # -----------------------------------------------------------
 
+    @traceable(name="cruder.create_node", run_type="tool")
     def create_node(
         self,
         name: str,
@@ -86,6 +89,7 @@ class CRUD(CodeProject):
 
         return new_node
 
+    @traceable(name="cruder.retrieve_node", run_type="retriever")
     def retrieve_node(
         self,
         node_id: str,
@@ -125,6 +129,7 @@ class CRUD(CodeProject):
 
         return node.model_dump(deep=False) if dump else node
 
+    @traceable(name="cruder.update_node", run_type="tool")
     def update_node(
         self,
         node_id: str,
@@ -206,6 +211,7 @@ class CRUD(CodeProject):
         self._log(f"[cruder] Node {node.id} updated correctly")
         return node, error
 
+    @traceable(name="cruder.delete_node", run_type="tool")
     def delete_node(
         self,
         node_id: str,

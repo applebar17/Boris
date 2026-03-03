@@ -1,7 +1,8 @@
+# boris/boriscore/ai_clients/providers/openai/azure_openai_adapter.py
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, List
 from openai import AzureOpenAI
 
 
@@ -18,7 +19,9 @@ from boris.boriscore.ai_clients.providers.openai.openai_adapter import (
 )
 from boris.boriscore.ai_clients.protocols.protocol_chat import (
     ChatResponse,
+    ChatRequest,
 )
+from boris.boriscore.utils.tracing import traceable
 
 
 class AzureOpenAIAdapter(OpenAIAdapter):
@@ -27,12 +30,10 @@ class AzureOpenAIAdapter(OpenAIAdapter):
     def __init__(self, logger: Optional[logging.Logger] = None, *args, **kwargs):
         logger.name = "[adapters.azure]"
         super().__init__(logger=logger, *args, **kwargs)
-        pass
 
+    @traceable(name="azure_openai_adapter.make_client", run_type="chain")
     def make_client(self, cfg: ProviderConfig) -> AzureOpenAI:
-        self._log(
-            f"{cfg.azure_openai_endpoint},  {cfg.azure_openai_api_key}, {cfg.azure_openai_api_version} "
-        )
+        self._log("[adapters.azure] Initializing Azure OpenAI client.", "debug")
         if AzureOpenAI is None:
             raise RuntimeError("openai package with AzureOpenAI not available.")
         if not (
@@ -54,6 +55,15 @@ class AzureOpenAIAdapter(OpenAIAdapter):
             except Exception:
                 pass
         return self.client
+
+
+    @traceable(name="azure_openai_adapter.chat", run_type="chain")
+    def chat(self, req: ChatRequest) -> ChatResponse:
+        return super().chat(req)
+
+    @traceable(name="azure_openai_adapter.get_embeddings", run_type="embedding")
+    def get_embeddings(self, content: Union[str, List[str]], dimensions: int = 1536) -> Any:
+        return super().get_embeddings(content, dimensions=dimensions)
 
     def describe(self, cfg: ProviderConfig) -> str:
         return f"AzureOpenAI(endpoint={cfg.azure_openai_endpoint}, v={cfg.azure_openai_api_version})"

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionUserMessageParam,
 )
-from boris.boriscore.utils.tracing import traceable
+from langsmith import traceable
 from boris.boriscore.code.code_manager.disk_manager import DiskManager
 from boris.boriscore.agent.prompts import (
     REASONING,

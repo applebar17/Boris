@@ -20,6 +20,8 @@ from boris.boriscore.terminal.models import CommandResult
 # Public type for selecting a shell
 Shell = Literal["bash", "pwsh", "powershell", "cmd"]
 
+from langsmith import traceable
+
 
 class TerminalExecutor:
     """
@@ -483,6 +485,7 @@ class TerminalExecutor:
 
         return "".join(parts)
 
+    @traceable(name="terminal_interface.run_terminal_tool", run_type="tool")
     def run_terminal_tool(
         self,
         shell: Shell,

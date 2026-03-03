@@ -26,7 +26,7 @@ from boris.boriscore.ai_clients.utils.utils import (
     _non_empty_items,
     _clean_val,
 )
-from boris.boriscore.utils.tracing import traceable
+from langsmith import traceable
 
 
 log_name_main = "llm_interface_base"
@@ -269,7 +269,6 @@ class LLMInterfaceBase:
 
         self._log(f"[env] tracing_enabled={self.tracing}", "debug")
 
-    @traceable(name="llm_base.get_adapter_for_provider", run_type="chain")
     def _get_adapter_for_provider(self, provider: str) -> LLMProviderAdapter:
         """
         Return a ready-to-use adapter instance for `provider`, creating it (and its client)

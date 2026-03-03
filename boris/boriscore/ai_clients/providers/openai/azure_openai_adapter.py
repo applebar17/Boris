@@ -21,7 +21,7 @@ from boris.boriscore.ai_clients.protocols.protocol_chat import (
     ChatResponse,
     ChatRequest,
 )
-from boris.boriscore.utils.tracing import traceable
+from langsmith import traceable
 
 
 class AzureOpenAIAdapter(OpenAIAdapter):
@@ -31,7 +31,6 @@ class AzureOpenAIAdapter(OpenAIAdapter):
         logger.name = "[adapters.azure]"
         super().__init__(logger=logger, *args, **kwargs)
 
-    @traceable(name="azure_openai_adapter.make_client", run_type="chain")
     def make_client(self, cfg: ProviderConfig) -> AzureOpenAI:
         self._log("[adapters.azure] Initializing Azure OpenAI client.", "debug")
         if AzureOpenAI is None:
@@ -56,13 +55,13 @@ class AzureOpenAIAdapter(OpenAIAdapter):
                 pass
         return self.client
 
-
-    @traceable(name="azure_openai_adapter.chat", run_type="chain")
     def chat(self, req: ChatRequest) -> ChatResponse:
         return super().chat(req)
 
     @traceable(name="azure_openai_adapter.get_embeddings", run_type="embedding")
-    def get_embeddings(self, content: Union[str, List[str]], dimensions: int = 1536) -> Any:
+    def get_embeddings(
+        self, content: Union[str, List[str]], dimensions: int = 1536
+    ) -> Any:
         return super().get_embeddings(content, dimensions=dimensions)
 
     def describe(self, cfg: ProviderConfig) -> str:

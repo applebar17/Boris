@@ -20,7 +20,7 @@ from boris.boriscore.code.code_manager.models.disk import FileDiskMetadata
 from boris.boriscore.code.prompts import (
     FILEDISK_DESCRIPTION_METADATA,
 )
-from boris.boriscore.utils.tracing import traceable
+from langsmith import traceable
 
 
 class DiskManager(CRUD):
@@ -56,7 +56,9 @@ class DiskManager(CRUD):
         try:
             disk_path = self.path_for(node, root_dst=self._root_dst(None))
             if disk_path.exists() and disk_path.is_file():
-                node.update(node_content=disk_path.read_text(encoding="utf-8", errors="ignore"))
+                node.update(
+                    node_content=disk_path.read_text(encoding="utf-8", errors="ignore")
+                )
         except Exception as e:
             self._log(
                 f"[code.disk_manager] Failed lazy content load for {node.id}: {e}",
@@ -94,7 +96,7 @@ class DiskManager(CRUD):
             language=language,
         )
 
-    @traceable(name="disk_manager.retrieve_node", run_type="retriever")
+    @traceable(name="disk_manager.retrieve_node", run_type="tool")
     def retrieve_node(
         self,
         node_id: str,
@@ -137,6 +139,7 @@ class DiskManager(CRUD):
     # CRUD on disk
     # -----------------------------------------------------------
 
+    @traceable(name="disk_manager.update_node_ondisk", run_type="tool")
     def update_node_ondisk(
         self,
         node_id: str,
@@ -209,6 +212,7 @@ class DiskManager(CRUD):
 
         return return_message
 
+    @traceable(name="code_manager.create_node_ondisk", run_type="tool")
     def create_node_ondisk(
         self,
         name: str,
@@ -347,7 +351,9 @@ class DiskManager(CRUD):
         return f"Node {ids_removed} correctly deleted!"
 
     @traceable(name="disk_manager.build_description_prompt", run_type="prompt")
-    def _build_description_prompt(self, file_name: str, file_content: Optional[str]) -> str:
+    def _build_description_prompt(
+        self, file_name: str, file_content: Optional[str]
+    ) -> str:
         content_snippet = _safe_truncate(file_content or "")
         return f"FILE: {file_name}\nCONTENT START\n{content_snippet}\nCONTENT END"
 
@@ -388,10 +394,14 @@ class DiskManager(CRUD):
             max_tokens=100,
         )
 
-        code_description_output: ChatResponse = self.call(req=params, tools_mapping=None)
+        code_description_output: ChatResponse = self.call(
+            req=params, tools_mapping=None
+        )
 
         try:
-            parsed = self._parse_description_metadata(code_description_output.message.content)
+            parsed = self._parse_description_metadata(
+                code_description_output.message.content
+            )
             self._log("[code.disk_manager] Successfully described code!")
         except Exception:
             parsed = FileDiskMetadata(

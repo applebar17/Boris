@@ -6,7 +6,7 @@ from typing import Optional, Union, Tuple
 
 from boris.boriscore.code.code_manager.code_nodes import ProjectNode
 from boris.boriscore.code.code_manager.code_project import CodeProject
-from boris.boriscore.utils.tracing import traceable
+from langsmith import traceable
 
 
 class CRUD(CodeProject):

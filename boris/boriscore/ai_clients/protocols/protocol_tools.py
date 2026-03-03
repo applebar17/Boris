@@ -52,7 +52,7 @@ class NodeMeta:
 # NOTE: These match the latest tool dictionaries you provided:
 # - RETRIEVE_NODE: node_id
 # - CREATE_NODE: parent_id, name, is_file, description, scope, language, commit_message, code
-# - UPDATE_NODE: node_id, new_name, description, scope, language, commit_message, new_parent_id, updated_file
+# - UPDATE_NODE: node_id, new_name, description, scope, language, commit_message, new_parent_id
 # - DELETE_NODE: node_id, cascade, promote_children
 # - RUN_TERMINAL_COMMANDS: shell, command, timeout, workdir, check, env
 # - INVOKE_AI_AGENT: (no parameters)
@@ -98,8 +98,8 @@ class CreateNodeArgs:
 class UpdateNodeArgs:
     """
     Input for 'update_node' tool.
-    Mirrors your current schema: rename via 'new_name', move via 'new_parent_id',
-    and full-file content via 'updated_file'.
+    Metadata/tree-only update contract: rename via 'new_name', move via
+    'new_parent_id', and metadata fields. Code edits are handled by line patch tools.
     """
 
     node_id: Optional[str] = None
@@ -109,7 +109,6 @@ class UpdateNodeArgs:
     language: Optional[str] = None
     commit_message: Optional[str] = None
     new_parent_id: Optional[str] = None
-    updated_file: Optional[str] = None  # whole file contents
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "UpdateNodeArgs":
@@ -121,7 +120,6 @@ class UpdateNodeArgs:
             language=d.get("language"),
             commit_message=d.get("commit_message"),
             new_parent_id=d.get("new_parent_id"),
-            updated_file=d.get("updated_file"),
         )
 
 

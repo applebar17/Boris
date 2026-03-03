@@ -414,3 +414,31 @@ def test_anthropic_chat_does_not_log_payload_body(monkeypatch):
     assert "Payload body logging disabled." in log_text
     assert "top-secret prompt" not in log_text
     assert '"messages"' not in log_text
+
+
+def test_openai_from_response_sanitizes_raw_payload():
+    from boris.boriscore.ai_clients.providers.openai import utils as openai_utils
+
+    resp = types.SimpleNamespace(
+        id="resp_1",
+        model="gpt-test",
+        object="chat.completion",
+        choices=[
+            types.SimpleNamespace(
+                message=types.SimpleNamespace(content="ok", tool_calls=None),
+                finish_reason="stop",
+            )
+        ],
+        usage=types.SimpleNamespace(
+            prompt_tokens=12,
+            completion_tokens=7,
+            total_tokens=19,
+        ),
+    )
+
+    out = openai_utils._from_openai_response(resp)
+
+    assert isinstance(out.raw, dict)
+    assert out.raw["id"] == "resp_1"
+    assert out.raw["model"] == "gpt-test"
+    assert out.raw["tool_call_count"] == 0

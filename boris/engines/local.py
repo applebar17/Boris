@@ -1,10 +1,11 @@
+# boris/engines/local.py
 from __future__ import annotations
 import pathlib
 import logging
 from typing import Optional
 from functools import partial
-from langsmith import traceable
-from boris.boriscore.utils.utils import log_msg, load_toolbox
+from boris.boriscore.utils.tracing import traceable
+from boris.boriscore.utils.utils import log_msg
 from boris.engines.toolbox import TOOLBOX
 from boris.boriscore.code.code_manager.disk_manager import DiskManager
 from boris.boriscore.agent.coding_agent import CodingAgent
@@ -78,8 +79,11 @@ class LocalEngine:
         """
         On startup:
         1) Load prior project snapshot if it exists.
-        2) Merge current disk into the in-memory tree (refresh code; add new nodes).
-        3) Persist a fresh snapshot (user data dir), NEVER touching the repo.
+        2) If no snapshot exists, build a lightweight index (no file reads, no AI metadata).
+
+        Important:
+        - No pre-chat AI read/description pipeline is executed here.
+        - Metadata enrichment is now lazy and triggered on-demand when files are retrieved.
         """
         self._log(f"Bootstrapping project tree from {self.base}", "info")
 
@@ -100,14 +104,16 @@ class LocalEngine:
             )
             dm.root.name = self.base.name
 
-        # 2) Merge current disk state (read-only, in-memory changes)
-        report = dm.sync_with_disk(
-            src=self.base,
-            read_code=True,
-            ai_enrichment_metadata_pipe=True,
-            remove_missing=True,
-        )
-        self.last_sync_report = report
+            # First run fallback: create an in-memory structure quickly, without
+            # reading file bodies and without AI enrichment.
+            self.last_sync_report = dm.sync_with_disk(
+                src=self.base,
+                read_code=False,
+                ai_enrichment_metadata_pipe=False,
+                remove_missing=False,
+            )
+        if snap_path:
+            self.last_sync_report = None
 
         # Hand over tree to the CodeWriter
         self.ca.root = dm.root
@@ -117,7 +123,7 @@ class LocalEngine:
         except Exception:
             pass
 
-        # 3) Save updated snapshot (user data dir)
+        # Save snapshot (user data dir)
         try:
             _snap_save(self.base, dm.to_dict())
             self._log("Snapshot correctly saved", "debug")
@@ -127,7 +133,7 @@ class LocalEngine:
     # ──────────────────────────────────────────────────────────────────────────
     # Chat API
     # ──────────────────────────────────────────────────────────────────────────
-    @traceable
+    @traceable(name="local_engine.chat_local_engine", run_type="chain")
     def chat_local_engine(self, history: list[dict], user: str) -> dict:
         """
         Execute one round of chat against the local agent.

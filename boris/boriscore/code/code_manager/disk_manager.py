@@ -1,3 +1,4 @@
+# boris/boriscore/code/code_manager/disk_manager.py
 import os
 import json
 import shutil
@@ -19,6 +20,7 @@ from boris.boriscore.code.code_manager.models.disk import FileDiskMetadata
 from boris.boriscore.code.prompts import (
     FILEDISK_DESCRIPTION_METADATA,
 )
+from boris.boriscore.utils.tracing import traceable
 
 
 class DiskManager(CRUD):
@@ -42,6 +44,94 @@ class DiskManager(CRUD):
             *args,
             **kwargs,
         )
+
+    def _ensure_file_content_loaded(self, node: ProjectNode) -> None:
+        """
+        Lazily hydrate `node.node_content` from disk when the in-memory snapshot
+        does not include content.
+        """
+        if not node.is_file or node.node_content is not None:
+            return
+
+        try:
+            disk_path = self.path_for(node, root_dst=self._root_dst(None))
+            if disk_path.exists() and disk_path.is_file():
+                node.update(node_content=disk_path.read_text(encoding="utf-8", errors="ignore"))
+        except Exception as e:
+            self._log(
+                f"[code.disk_manager] Failed lazy content load for {node.id}: {e}",
+                "debug",
+            )
+
+    @staticmethod
+    def _needs_description(node: ProjectNode) -> bool:
+        desc = (node.description or "").strip().lower()
+        return node.is_file and desc in {"", "unknown", "unable to parse metadata"}
+
+    @traceable(name="disk_manager.describe_node_if_missing", run_type="tool")
+    def _describe_node_if_missing(self, node: ProjectNode) -> None:
+        """
+        If file node has no description yet, generate a brief metadata description
+        on-demand via the LLM and store it back on the node.
+        """
+        if not self._needs_description(node):
+            return
+
+        self._ensure_file_content_loaded(node)
+
+        metadata = self._diskfile_add_description_metadata(
+            file_name=node.name,
+            file_content=node.node_content or "",
+        )
+
+        description = metadata.description if metadata.description else node.description
+        scope = node.scope if (node.scope or "").strip() else metadata.scope
+        language = node.language or metadata.coding_language
+
+        node.update(
+            description=description,
+            scope=scope,
+            language=language,
+        )
+
+    @traceable(name="disk_manager.retrieve_node", run_type="retriever")
+    def retrieve_node(
+        self,
+        node_id: str,
+        *,
+        dump: bool = True,
+        return_content: bool = False,
+        to_emit: bool = False,
+    ) -> Union[ProjectNode, dict, str]:
+        """
+        Retrieve node metadata or full file content.
+        When `return_content=True`, lazily enrich missing file descriptions.
+        """
+        node: ProjectNode = super().retrieve_node(  # type: ignore[assignment]
+            node_id=node_id,
+            dump=False,
+            return_content=False,
+            to_emit=to_emit,
+        )
+
+        if return_content and node.is_file:
+            self._ensure_file_content_loaded(node)
+            self._describe_node_if_missing(node)
+
+            if to_emit:
+                self._emit("reading file", Path(node.relative_path))
+
+            return (
+                f"Node {node.id}\n"
+                f"named {node.name}\n"
+                f"located at {node.relative_path}\n"
+                f"with description: {node.description}\n"
+                f"Coded in [{node.language}]:\n\nCODE STARTS BELOW\n---"
+                f"{node.node_content or ''}"
+                "\n\n---\nCODE ENDED"
+            )
+
+        return node.model_dump(deep=False) if dump else node
 
     # -----------------------------------------------------------
     # CRUD on disk
@@ -256,6 +346,22 @@ class DiskManager(CRUD):
 
         return f"Node {ids_removed} correctly deleted!"
 
+    @traceable(name="disk_manager.build_description_prompt", run_type="prompt")
+    def _build_description_prompt(self, file_name: str, file_content: Optional[str]) -> str:
+        content_snippet = _safe_truncate(file_content or "")
+        return f"FILE: {file_name}\nCONTENT START\n{content_snippet}\nCONTENT END"
+
+    @traceable(name="disk_manager.parse_description_metadata", run_type="parser")
+    def _parse_description_metadata(self, content: object) -> FileDiskMetadata:
+        if isinstance(content, dict):
+            return FileDiskMetadata(**content)
+        if isinstance(content, FileDiskMetadata):
+            return content
+        if isinstance(content, str):
+            return FileDiskMetadata(**json.loads(content))
+        raise TypeError(f"Unsupported metadata output type: {type(content)!r}")
+
+    @traceable(name="disk_manager.describe_file_metadata", run_type="chain")
     def _diskfile_add_description_metadata(
         self,
         file_name: str,
@@ -268,18 +374,9 @@ class DiskManager(CRUD):
         - Truncates overly large content to avoid token overflows.
         - Enforces structured JSON output (parsed into FileDiskMetadata).
         """
-        # Testing purposes
-
-        # return FileDiskMetadata(
-        #     description="unable to parse metadata",
-        #     scope="unknown",
-        #     coding_language="unknown",
-        # )
-
-        content_snippet = _safe_truncate(file_content or "")
-
-        user_msg = (
-            f"FILE: {file_name}\n" f"CONTENT START\n{content_snippet}\nCONTENT END"
+        user_msg = self._build_description_prompt(
+            file_name=file_name,
+            file_content=file_content,
         )
 
         params = self.handle_params(
@@ -287,29 +384,16 @@ class DiskManager(CRUD):
             chat_messages=[{"role": "user", "content": user_msg}],
             model_kind="chat",
             temperature=0.0,
-            response_format=FileDiskMetadata,  # your structured output
+            response_format=FileDiskMetadata,
             max_tokens=100,
         )
 
-        code_description_output: ChatResponse = self.call(
-            req=params, tools_mapping=None
-        )
+        code_description_output: ChatResponse = self.call(req=params, tools_mapping=None)
 
-        # Some providers already return structured objects. If not, parse JSON.
         try:
-            parsed: FileDiskMetadata
-            if isinstance(code_description_output.message.content, dict):
-                parsed = FileDiskMetadata(**code_description_output.message.content)
-            elif type(code_description_output.message.content) == FileDiskMetadata:
-                parsed = code_description_output.message.content
-            else:
-                parsed = FileDiskMetadata(
-                    **json.loads(code_description_output.message.content)
-                )
-            self._log(f"[code.disk_manager] Successfully described code!")
-
+            parsed = self._parse_description_metadata(code_description_output.message.content)
+            self._log("[code.disk_manager] Successfully described code!")
         except Exception:
-            # last-resort guardrail
             parsed = FileDiskMetadata(
                 description="unable to parse metadata",
                 scope="unknown",
